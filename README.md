@@ -1,0 +1,2 @@
+# manzana
+Sovereign macOS hardware 
