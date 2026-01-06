@@ -1,0 +1,165 @@
+# Manzana CI Pipeline
+# Three-Tiered Certeza Testing (Iron Lotus Framework)
+#
+# Tier 1: ON-SAVE - Fast checks (<3s locally, ~1min CI)
+# Tier 2: ON-COMMIT - Full validation (1-5min)
+# Tier 3: ON-MERGE - Exhaustive QA (hours)
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  # ==========================================================================
+  # TIER 1: Fast Checks
+  # ==========================================================================
+  tier1:
+    name: Tier 1 - Fast Checks
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Check
+        run: cargo check --all-targets
+
+      - name: Clippy (lib only)
+        run: cargo clippy --lib -- -D warnings
+
+      - name: Unit tests
+        run: cargo test --lib
+
+  # ==========================================================================
+  # TIER 2: Full Validation
+  # ==========================================================================
+  tier2:
+    name: Tier 2 - Full Validation
+    runs-on: macos-latest
+    needs: tier1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Format check
+        run: cargo fmt --all --check
+
+      - name: Clippy (all targets)
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: All tests
+        run: cargo test --all-targets
+
+      - name: Doc tests
+        run: cargo test --doc
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Coverage (target 90%)
+        run: cargo llvm-cov --lib --fail-under 90
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+
+      - name: Security audit
+        run: cargo audit
+
+  # ==========================================================================
+  # TIER 3: Exhaustive QA (on merge to main only)
+  # ==========================================================================
+  tier3:
+    name: Tier 3 - Exhaustive QA
+    runs-on: macos-latest
+    needs: tier2
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (nightly for MIRI)
+        uses: dtolnay/rust-action@nightly
+        with:
+          components: miri, clippy, rustfmt
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-action@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-tier3-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install cargo-mutants
+        run: cargo install cargo-mutants
+
+      - name: Mutation testing (target 80%)
+        run: cargo mutants --timeout-multiplier 3.0 -- --lib
+        continue-on-error: true  # Report but don't fail (initial development)
+
+      - name: MIRI (undefined behavior check)
+        run: cargo +nightly miri test --lib
+        continue-on-error: true  # May not work with all FFI
+
+      - name: Build documentation
+        run: cargo doc --no-deps
+
+      - name: Benchmarks (compile check)
+        run: cargo bench --no-run
+
+  # ==========================================================================
+  # Cross-platform Build Check
+  # ==========================================================================
+  cross-platform:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+
+      - name: Build
+        run: cargo build --lib
+
+      - name: Test (lib only)
+        run: cargo test --lib

@@ -1,0 +1,48 @@
+# PMAT Metrics Configuration
+# Manzana: Safe Rust Interfaces for Apple Hardware
+
+[thresholds]
+# Tier 1: ON-SAVE (sub-3s feedback)
+lint_fast_timeout = "30s"
+check_timeout = "60s"
+
+# Tier 2: ON-COMMIT (1-5 min)
+test_timeout = "5m"
+coverage_timeout = "10m"
+
+# Tier 3: ON-MERGE (hours)
+mutation_timeout = "2h"
+miri_timeout = "30m"
+benchmark_timeout = "15m"
+
+[trends]
+window_days = 90
+regression_threshold = 0.02
+alert_on_regression = true
+
+[tdg]
+# Technical Debt Gradient
+minimum_grade = "B+"
+ratchet = true
+components = [
+    { name = "coverage", weight = 0.25 },
+    { name = "mutation", weight = 0.20 },
+    { name = "complexity", weight = 0.15 },
+    { name = "documentation", weight = 0.15 },
+    { name = "debt", weight = 0.10 },
+    { name = "unsafe_ratio", weight = 0.15 },
+]
+
+[benchmarks]
+track_history = true
+regression_threshold_percent = 10.0
+metrics = [
+    "afterburner_stats_latency",
+    "metal_device_enumeration",
+    "uma_buffer_allocation",
+]
+
+[reporting]
+format = "json"
+output_dir = "target/pmat"
+include_trends = true
