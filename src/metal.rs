@@ -120,49 +120,129 @@ pub struct MetalCompute {
 impl MetalCompute {
     /// Enumerate all available Metal devices.
     ///
+    /// Uses `system_profiler` to detect real GPU hardware on macOS.
     /// Returns an empty vector on non-macOS platforms.
     #[must_use]
     pub fn devices() -> Vec<MetalDevice> {
         #[cfg(target_os = "macos")]
         {
-            // Stub implementation - returns simulated device info
-            // Full implementation would use Metal framework
-            let is_apple_silicon = cfg!(target_arch = "aarch64");
-
-            let devices = vec![MetalDevice {
-                name: if is_apple_silicon {
-                    "Apple M1".to_string()
-                } else {
-                    "Intel UHD Graphics".to_string()
-                },
-                registry_id: 1,
-                is_low_power: !is_apple_silicon,
-                is_headless: false,
-                max_threads_per_threadgroup: 1024,
-                max_buffer_length: if is_apple_silicon {
-                    // Apple Silicon: unified memory, larger buffers
-                    17_179_869_184 // 16 GB
-                } else {
-                    4_294_967_296 // 4 GB
-                },
-                has_unified_memory: is_apple_silicon,
-                index: 0,
-            }];
-
-            // Simulate dual GPU on Mac Pro
-            #[cfg(target_arch = "x86_64")]
-            {
-                // Check for Mac Pro-like configuration (would use IOKit in real impl)
-                // For now, just return single device
-            }
-
-            devices
+            Self::detect_gpus_via_system_profiler()
         }
 
         #[cfg(not(target_os = "macos"))]
         {
             Vec::new()
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn detect_gpus_via_system_profiler() -> Vec<MetalDevice> {
+        use std::process::Command;
+
+        let output = match Command::new("system_profiler")
+            .args(["SPDisplaysDataType"])
+            .output()
+        {
+            Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).to_string(),
+            _ => return Self::fallback_device(),
+        };
+
+        let mut devices = Vec::new();
+        let mut current_name = String::new();
+        let mut current_vram: u64 = 0;
+        let mut index = 0;
+
+        for line in output.lines() {
+            let line = line.trim();
+
+            // GPU name line (e.g., "AMD Radeon Pro W5700X:")
+            if line.ends_with(':') && !line.starts_with("Graphics")
+                && !line.contains("Displays")
+                && !line.contains("VRAM")
+                && !line.contains("Vendor")
+                && !line.contains("Device")
+                && !line.contains("Bus")
+                && !line.contains("Slot")
+                && !line.contains("Metal")
+            {
+                // Save previous GPU if we have one
+                if !current_name.is_empty() {
+                    devices.push(Self::create_device(&current_name, current_vram, index));
+                    index += 1;
+                }
+                current_name = line.trim_end_matches(':').to_string();
+                current_vram = 0;
+            }
+
+            // VRAM line (e.g., "VRAM (Total): 16 GB")
+            if line.starts_with("VRAM") {
+                if let Some(vram_str) = line.split(':').nth(1) {
+                    let vram_str = vram_str.trim();
+                    if let Some(gb_pos) = vram_str.find(" GB") {
+                        if let Ok(gb) = vram_str[..gb_pos].trim().parse::<u64>() {
+                            current_vram = gb * 1_073_741_824; // Convert GB to bytes
+                        }
+                    } else if let Some(mb_pos) = vram_str.find(" MB") {
+                        if let Ok(mb) = vram_str[..mb_pos].trim().parse::<u64>() {
+                            current_vram = mb * 1_048_576; // Convert MB to bytes
+                        }
+                    }
+                }
+            }
+        }
+
+        // Don't forget the last GPU
+        if !current_name.is_empty() {
+            devices.push(Self::create_device(&current_name, current_vram, index));
+        }
+
+        if devices.is_empty() {
+            Self::fallback_device()
+        } else {
+            devices
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn create_device(name: &str, vram_bytes: u64, index: usize) -> MetalDevice {
+        let is_apple_silicon = name.contains("Apple") || cfg!(target_arch = "aarch64");
+        let is_integrated = name.contains("Intel") || name.contains("Integrated");
+
+        MetalDevice {
+            name: name.to_string(),
+            registry_id: (index + 1) as u64,
+            is_low_power: is_integrated,
+            is_headless: false,
+            max_threads_per_threadgroup: 1024,
+            max_buffer_length: if vram_bytes > 0 {
+                vram_bytes
+            } else if is_apple_silicon {
+                17_179_869_184 // 16 GB default for Apple Silicon
+            } else {
+                4_294_967_296 // 4 GB default
+            },
+            has_unified_memory: is_apple_silicon,
+            index,
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn fallback_device() -> Vec<MetalDevice> {
+        let is_apple_silicon = cfg!(target_arch = "aarch64");
+        vec![MetalDevice {
+            name: if is_apple_silicon {
+                "Apple GPU".to_string()
+            } else {
+                "Unknown GPU".to_string()
+            },
+            registry_id: 1,
+            is_low_power: false,
+            is_headless: false,
+            max_threads_per_threadgroup: 1024,
+            max_buffer_length: 4_294_967_296,
+            has_unified_memory: is_apple_silicon,
+            index: 0,
+        }]
     }
 
     /// Check if any Metal device is available.
@@ -471,6 +551,32 @@ mod tests {
     #[test]
     fn test_convenience_function() {
         assert_eq!(is_available(), MetalCompute::is_available());
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn test_detect_real_gpus() {
+        // Should detect actual GPUs on Mac via system_profiler
+        let devices = MetalCompute::devices();
+        assert!(!devices.is_empty(), "Should detect at least one GPU");
+
+        // Device name should be real, not stub
+        let first = &devices[0];
+        assert!(!first.name.contains("Intel UHD"),
+            "Should detect real GPU, not stub. Got: {}", first.name);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn test_detect_gpu_vram() {
+        let devices = MetalCompute::devices();
+        if !devices.is_empty() {
+            // Real GPUs should report VRAM
+            let first = &devices[0];
+            // Mac Pro AMD GPUs have 16GB, Apple Silicon has unified memory
+            assert!(first.vram_gb() >= 1.0,
+                "GPU should report at least 1GB VRAM, got: {} GB", first.vram_gb());
+        }
     }
 
     #[test]
