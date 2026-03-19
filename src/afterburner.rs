@@ -237,6 +237,7 @@ fn convert_raw_stats(raw: &AfterburnerRawStats) -> AfterburnerStats {
 ///
 /// Convenience function equivalent to `AfterburnerMonitor::is_available()`.
 #[must_use]
+#[allow(clippy::missing_const_for_fn)]
 pub fn is_available() -> bool {
     AfterburnerMonitor::is_available()
 }

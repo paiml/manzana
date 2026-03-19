@@ -224,6 +224,7 @@ impl UmaBuffer {
     ///
     /// Returns `true` on Apple Silicon, `false` on Intel Macs.
     #[must_use]
+    #[allow(clippy::missing_const_for_fn)]
     pub fn is_uma_available() -> bool {
         #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
         {
@@ -259,6 +260,7 @@ impl std::fmt::Debug for UmaBuffer {
 ///
 /// Convenience function equivalent to `UmaBuffer::is_uma_available()`.
 #[must_use]
+#[allow(clippy::missing_const_for_fn)]
 pub fn is_available() -> bool {
     UmaBuffer::is_uma_available()
 }
