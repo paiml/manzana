@@ -605,10 +605,13 @@ mod tests {
     #[test]
     fn test_empty_tag_rejected() {
         let config = KeyConfig::new("");
-        let _result = SecureEnclaveSigner::create(config);
+        let result = SecureEnclaveSigner::create(config);
 
         #[cfg(target_os = "macos")]
-        assert!(_result.is_err(), "Empty tag should be rejected");
+        assert!(result.is_err(), "Empty tag should be rejected");
+
+        #[cfg(not(target_os = "macos"))]
+        let _ = result;
     }
 
     #[test]
