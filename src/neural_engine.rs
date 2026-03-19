@@ -171,7 +171,7 @@ impl NeuralEngineSession {
     ///
     /// Returns `true` on Apple Silicon Macs, `false` on Intel Macs.
     #[must_use]
-    pub const fn is_available() -> bool {
+    pub fn is_available() -> bool {
         // Check for Apple Silicon via sysctl
         #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
         {
@@ -280,7 +280,7 @@ impl NeuralEngineSession {
 ///
 /// Convenience function equivalent to `NeuralEngineSession::is_available()`.
 #[must_use]
-pub const fn is_available() -> bool {
+pub fn is_available() -> bool {
     NeuralEngineSession::is_available()
 }
 

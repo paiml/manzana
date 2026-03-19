@@ -123,7 +123,7 @@ impl MetalCompute {
     /// Uses `system_profiler` to detect real GPU hardware on macOS.
     /// Returns an empty vector on non-macOS platforms.
     #[must_use]
-    pub const fn devices() -> Vec<MetalDevice> {
+    pub fn devices() -> Vec<MetalDevice> {
         #[cfg(target_os = "macos")]
         {
             Self::detect_gpus_via_system_profiler()
