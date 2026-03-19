@@ -215,7 +215,7 @@ impl AfterburnerMonitor {
     ///
     /// This is a static method that can be called without creating a monitor.
     #[must_use]
-    pub const fn is_available() -> bool {
+    pub fn is_available() -> bool {
         find_afterburner_service().is_some()
     }
 }
@@ -237,7 +237,7 @@ fn convert_raw_stats(raw: &AfterburnerRawStats) -> AfterburnerStats {
 ///
 /// Convenience function equivalent to `AfterburnerMonitor::is_available()`.
 #[must_use]
-pub const fn is_available() -> bool {
+pub fn is_available() -> bool {
     AfterburnerMonitor::is_available()
 }
 
