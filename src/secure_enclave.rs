@@ -207,7 +207,7 @@ impl PublicKey {
         // Check uncompressed point format marker
         if bytes[0] != 0x04 {
             return Err(Error::invalid_input(
-                "public key must be in uncompressed point format (0x04 prefix)"
+                "public key must be in uncompressed point format (0x04 prefix)",
             ));
         }
 
@@ -489,7 +489,10 @@ mod tests {
         #[cfg(target_os = "macos")]
         assert!(available, "Secure Enclave should be available on macOS");
         #[cfg(not(target_os = "macos"))]
-        assert!(!available, "Secure Enclave should not be available on non-macOS");
+        assert!(
+            !available,
+            "Secure Enclave should not be available on non-macOS"
+        );
     }
 
     // F063: Key creation succeeds
@@ -580,8 +583,11 @@ mod tests {
         let sig1 = signer.sign(b"Data A").unwrap();
         let sig2 = signer.sign(b"Data B").unwrap();
 
-        assert_ne!(sig1.as_bytes(), sig2.as_bytes(),
-            "Different data should produce different signatures");
+        assert_ne!(
+            sig1.as_bytes(),
+            sig2.as_bytes(),
+            "Different data should produce different signatures"
+        );
     }
 
     // F069: Key deletion works
@@ -599,10 +605,10 @@ mod tests {
     #[test]
     fn test_empty_tag_rejected() {
         let config = KeyConfig::new("");
-        let result = SecureEnclaveSigner::create(config);
+        let _result = SecureEnclaveSigner::create(config);
 
         #[cfg(target_os = "macos")]
-        assert!(result.is_err(), "Empty tag should be rejected");
+        assert!(_result.is_err(), "Empty tag should be rejected");
     }
 
     #[test]
@@ -672,7 +678,10 @@ mod tests {
         assert_eq!(AccessControl::None.to_string(), "None");
         assert_eq!(AccessControl::DevicePasscode.to_string(), "Device Passcode");
         assert_eq!(AccessControl::Biometric.to_string(), "Biometric");
-        assert_eq!(AccessControl::BiometricOrPasscode.to_string(), "Biometric or Passcode");
+        assert_eq!(
+            AccessControl::BiometricOrPasscode.to_string(),
+            "Biometric or Passcode"
+        );
     }
 
     #[test]

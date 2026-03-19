@@ -123,7 +123,7 @@ impl MetalCompute {
     /// Uses `system_profiler` to detect real GPU hardware on macOS.
     /// Returns an empty vector on non-macOS platforms.
     #[must_use]
-    pub fn devices() -> Vec<MetalDevice> {
+    pub const fn devices() -> Vec<MetalDevice> {
         #[cfg(target_os = "macos")]
         {
             Self::detect_gpus_via_system_profiler()
@@ -156,7 +156,8 @@ impl MetalCompute {
             let line = line.trim();
 
             // GPU name line (e.g., "AMD Radeon Pro W5700X:")
-            if line.ends_with(':') && !line.starts_with("Graphics")
+            if line.ends_with(':')
+                && !line.starts_with("Graphics")
                 && !line.contains("Displays")
                 && !line.contains("VRAM")
                 && !line.contains("Vendor")
@@ -562,8 +563,11 @@ mod tests {
 
         // Device name should be real, not stub
         let first = &devices[0];
-        assert!(!first.name.contains("Intel UHD"),
-            "Should detect real GPU, not stub. Got: {}", first.name);
+        assert!(
+            !first.name.contains("Intel UHD"),
+            "Should detect real GPU, not stub. Got: {}",
+            first.name
+        );
     }
 
     #[test]
@@ -574,8 +578,11 @@ mod tests {
             // Real GPUs should report VRAM
             let first = &devices[0];
             // Mac Pro AMD GPUs have 16GB, Apple Silicon has unified memory
-            assert!(first.vram_gb() >= 1.0,
-                "GPU should report at least 1GB VRAM, got: {} GB", first.vram_gb());
+            assert!(
+                first.vram_gb() >= 1.0,
+                "GPU should report at least 1GB VRAM, got: {} GB",
+                first.vram_gb()
+            );
         }
     }
 

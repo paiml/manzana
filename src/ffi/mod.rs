@@ -49,7 +49,7 @@ pub mod iokit {
     use crate::error::{Error, Subsystem};
 
     /// Stub: Always returns None on non-macOS.
-    pub fn find_afterburner_service() -> Option<AfterburnerService> {
+    pub const fn find_afterburner_service() -> Option<AfterburnerService> {
         None
     }
 
@@ -58,7 +58,8 @@ pub mod iokit {
 
     impl AfterburnerService {
         /// Stub: Returns error on non-macOS.
-        pub fn get_stats(&self) -> Result<AfterburnerRawStats, Error> {
+        #[allow(clippy::unused_self)]
+        pub const fn get_stats(&self) -> Result<AfterburnerRawStats, Error> {
             Err(Error::not_available(Subsystem::Afterburner))
         }
     }

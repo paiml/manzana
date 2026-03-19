@@ -1,0 +1,30 @@
+{
+  "version": "1.4.0",
+  "built_at": "2026-03-18T21:03:16.443399138+00:00",
+  "project_root": "/home/noah/src/manzana",
+  "function_count": 152,
+  "file_count": 16,
+  "languages": [
+    "Rust"
+  ],
+  "avg_tdg_score": 0.0828947,
+  "file_checksums": {
+    "examples/hardware_discovery.rs": "4c051d80508f20ccdf0a0b581b08774ea9123b29e24dfc6861c12ba5865aa8b1",
+    "src/ffi/iokit.rs": "b3b12dd251500c39eff28130861e66e2abfa9b9c24f3e6f9c00a3d26d9630a1a",
+    "src/secure_enclave.rs": "14da0a4946b5aa98341d23c6348ad7a7e2d6d262072121f3dbb57cc979d4abc9",
+    "examples/secure_signing.rs": "72d6f56c0eee69f03b1f1e69b166ec5f75b148f52b4df43ca0b02cef5e590b6c",
+    "benches/afterburner_bench.rs": "51230d5f89ca7e509aa82f23dfeffa28cdc99262114685aaa51b1a367d029674",
+    "src/lib.rs": "4cb8e1bc25d3c8dc4a4d1688b5aea878f9b6aa310a1647dff327ecdb8f1100fb",
+    "src/ffi/security.rs": "f6ed2e82228cf3aa70fd496c66d5698ba78bf38a3befd85111c87bf667686c87",
+    "tests/integration_tests.rs": "8d0d740ba3e356548a80544e1d3aab0db2040534f0f57a0ef0cf36c7d089f1b8",
+    "src/ffi/mod.rs": "fcb9a044ef55975cd638f82a648ea36c1aa06e71eb787ddbc025d7458b78e4cd",
+    "examples/metal_compute.rs": "b2aff25451bd42cce73d0b4b8537f24f24595a79c7f0e71ed79447e38a34b3ad",
+    "src/unified_memory.rs": "5c373a3aa58fce11c501a66fddee28082c44f71af0706d5a45a88c53da6e3dd5",
+    "src/error.rs": "65899b8c45536dc7a5e9b3b4dedde5111f4773a752169bb6cae1c078fcd1b3ef",
+    "src/metal.rs": "d744bce2743bc8a2506a1eae848c0805f45635c1c6744af59b3194662f9767bc",
+    "src/neural_engine.rs": "881463e18d234219d06a81f0ddf5ed0b5115b5c45a30bda060f2a37862d36b5b",
+    "tests/property_tests.rs": "d962c8d106dd9c8817b82db0a6703a9020ea4ba376e99185dd6cb4d77d267d7b",
+    "src/afterburner.rs": "58d2e1375432709192f8d8e3e7711b7f135092b021ef9f6552a157d82983029f"
+  },
+  "last_incremental_changes": 0
+}

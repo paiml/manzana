@@ -29,15 +29,31 @@ fn main() -> Result<(), manzana::Error> {
         println!("│ GPU {}: {:<52} │", i, &device.name);
         println!("├─────────────────────────────────────────────────────────────┤");
         println!("│ Registry ID: {:<46} │", device.registry_id);
-        println!("│ VRAM: {:>6.1} GB                                            │", device.vram_gb());
-        println!("│ Max Threads/Group: {:>6}                                   │", device.max_threads_per_threadgroup);
-        println!("│ Low Power: {:<5}  Headless: {:<5}  UMA: {:<5}              │",
+        println!(
+            "│ VRAM: {:>6.1} GB                                            │",
+            device.vram_gb()
+        );
+        println!(
+            "│ Max Threads/Group: {:>6}                                   │",
+            device.max_threads_per_threadgroup
+        );
+        println!(
+            "│ Low Power: {:<5}  Headless: {:<5}  UMA: {:<5}              │",
             if device.is_low_power { "Yes" } else { "No" },
             if device.is_headless { "Yes" } else { "No" },
-            if device.has_unified_memory { "Yes" } else { "No" }
+            if device.has_unified_memory {
+                "Yes"
+            } else {
+                "No"
+            }
         );
-        println!("│ Apple Silicon: {:<5}                                        │",
-            if device.is_apple_silicon() { "Yes" } else { "No" }
+        println!(
+            "│ Apple Silicon: {:<5}                                        │",
+            if device.is_apple_silicon() {
+                "Yes"
+            } else {
+                "No"
+            }
         );
         println!("└─────────────────────────────────────────────────────────────┘");
         println!();
@@ -73,7 +89,8 @@ fn main() -> Result<(), manzana::Error> {
     let buffer_b = compute.allocate_buffer(buffer_size)?;
     let buffer_result = compute.allocate_buffer(buffer_size)?;
 
-    println!("✓ Allocated 3 buffers × {} KB = {} KB total",
+    println!(
+        "✓ Allocated 3 buffers × {} KB = {} KB total",
         buffer_size / 1024,
         (buffer_size * 3) / 1024
     );

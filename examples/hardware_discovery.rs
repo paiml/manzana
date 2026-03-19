@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)]
 //! Hardware Discovery Example
 //!
 //! Discovers and reports all available Apple hardware accelerators.
@@ -5,11 +6,8 @@
 //! Run with: cargo run --example `hardware_discovery`
 
 use manzana::{
-    afterburner::AfterburnerMonitor,
-    metal::MetalCompute,
-    neural_engine::NeuralEngineSession,
-    secure_enclave::SecureEnclaveSigner,
-    unified_memory::UmaBuffer,
+    afterburner::AfterburnerMonitor, metal::MetalCompute, neural_engine::NeuralEngineSession,
+    secure_enclave::SecureEnclaveSigner, unified_memory::UmaBuffer,
 };
 
 fn main() {
@@ -19,7 +17,14 @@ fn main() {
     println!();
 
     // Check platform
-    println!("Platform: {}", if manzana::is_macos() { "macOS" } else { "Other" });
+    println!(
+        "Platform: {}",
+        if manzana::is_macos() {
+            "macOS"
+        } else {
+            "Other"
+        }
+    );
     println!("Manzana Version: {}", manzana::VERSION);
     println!();
 
@@ -31,10 +36,14 @@ fn main() {
         println!("│ Status: ✓ AVAILABLE                                         │");
         if let Some(monitor) = AfterburnerMonitor::new() {
             if let Ok(stats) = monitor.stats() {
-                println!("│ Active Streams: {:>3} / {:>3}                                 │",
-                    stats.streams_active, stats.streams_capacity);
-                println!("│ Utilization: {:>5.1}%                                        │",
-                    stats.utilization_percent);
+                println!(
+                    "│ Active Streams: {:>3} / {:>3}                                 │",
+                    stats.streams_active, stats.streams_capacity
+                );
+                println!(
+                    "│ Utilization: {:>5.1}%                                        │",
+                    stats.utilization_percent
+                );
             }
         }
     } else {
@@ -50,8 +59,14 @@ fn main() {
     if NeuralEngineSession::is_available() {
         println!("│ Status: ✓ AVAILABLE                                         │");
         if let Some(caps) = NeuralEngineSession::capabilities() {
-            println!("│ Performance: {:>5.1} TOPS                                    │", caps.tops);
-            println!("│ Cores: {:>2}                                                  │", caps.core_count);
+            println!(
+                "│ Performance: {:>5.1} TOPS                                    │",
+                caps.tops
+            );
+            println!(
+                "│ Cores: {:>2}                                                  │",
+                caps.core_count
+            );
         }
     } else {
         println!("│ Status: ✗ Not available (requires Apple Silicon)            │");
@@ -68,9 +83,14 @@ fn main() {
         let devices = MetalCompute::devices();
         for (i, device) in devices.iter().enumerate() {
             println!("│ GPU {}: {:<50} │", i, truncate(&device.name, 50));
-            println!("│   VRAM: {:>6.1} GB | UMA: {}                              │",
+            println!(
+                "│   VRAM: {:>6.1} GB | UMA: {}                              │",
                 device.vram_gb(),
-                if device.has_unified_memory { "Yes" } else { "No " }
+                if device.has_unified_memory {
+                    "Yes"
+                } else {
+                    "No "
+                }
             );
         }
     } else {
@@ -100,7 +120,8 @@ fn main() {
         println!("│ Status: ✓ AVAILABLE                                         │");
         if let Ok(buffer) = UmaBuffer::new(4096) {
             println!("│ Page Size: 4096 bytes                                       │");
-            println!("│ Test Allocation: {} (aligned: {})                        │",
+            println!(
+                "│ Test Allocation: {} (aligned: {})                        │",
                 if buffer.len() == 4096 { "OK" } else { "FAIL" },
                 if buffer.is_aligned() { "yes" } else { "no" }
             );
@@ -113,14 +134,18 @@ fn main() {
 
     // Summary
     println!("╔════════════════════════════════════════════════════════════╗");
-    println!("║ Summary: {} accelerator(s) available                        ║",
+    println!(
+        "║ Summary: {} accelerator(s) available                        ║",
         [
             AfterburnerMonitor::is_available(),
             NeuralEngineSession::is_available(),
             MetalCompute::is_available(),
             SecureEnclaveSigner::is_available(),
             UmaBuffer::is_uma_available(),
-        ].iter().filter(|&&x| x).count()
+        ]
+        .iter()
+        .filter(|&&x| x)
+        .count()
     );
     println!("╚════════════════════════════════════════════════════════════╝");
 }

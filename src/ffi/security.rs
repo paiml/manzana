@@ -149,7 +149,10 @@ mod tests {
     #[test]
     fn test_sec_error_from_os_status() {
         assert_eq!(SecError::from_os_status(0), Some(SecError::Success));
-        assert_eq!(SecError::from_os_status(-25300), Some(SecError::ItemNotFound));
+        assert_eq!(
+            SecError::from_os_status(-25300),
+            Some(SecError::ItemNotFound)
+        );
         assert_eq!(SecError::from_os_status(-128), Some(SecError::UserCanceled));
         assert_eq!(SecError::from_os_status(99999), None);
     }

@@ -56,7 +56,7 @@ fn test_afterburner_monitor_graceful_on_missing_hardware() {
     let monitor = AfterburnerMonitor::new();
     // We can't assert the value since it depends on hardware,
     // but we verify it doesn't panic
-    drop(monitor);
+    let _ = monitor;
 }
 
 #[test]
@@ -192,7 +192,10 @@ fn test_f061_secure_enclave_detection() {
     #[cfg(target_os = "macos")]
     assert!(available, "Secure Enclave should be available on macOS");
     #[cfg(not(target_os = "macos"))]
-    assert!(!available, "Secure Enclave should not be available on non-macOS");
+    assert!(
+        !available,
+        "Secure Enclave should not be available on non-macOS"
+    );
 }
 
 // F063: Key creation succeeds
@@ -218,7 +221,9 @@ fn test_f065_f066_signature_roundtrip() {
     assert!(signature.len() >= 64 && signature.len() <= 72);
 
     // Verify roundtrip
-    let valid = signer.verify(data, &signature).expect("Verification failed");
+    let valid = signer
+        .verify(data, &signature)
+        .expect("Verification failed");
     assert!(valid, "Signature should verify correctly");
 }
 
@@ -230,7 +235,9 @@ fn test_f067_invalid_signature_rejected() {
     let signer = SecureEnclaveSigner::create(config).expect("Key creation failed");
 
     let sig1 = signer.sign(b"Data A").expect("Signing failed");
-    let valid = signer.verify(b"Data B", &sig1).expect("Verification failed");
+    let valid = signer
+        .verify(b"Data B", &sig1)
+        .expect("Verification failed");
 
     assert!(!valid, "Signature for different data should not verify");
 }
@@ -259,9 +266,15 @@ fn test_secure_enclave_access_control_options() {
 fn test_f046_metal_device_enumeration() {
     let devices = MetalCompute::devices();
     #[cfg(target_os = "macos")]
-    assert!(!devices.is_empty(), "Should find at least one Metal device on macOS");
+    assert!(
+        !devices.is_empty(),
+        "Should find at least one Metal device on macOS"
+    );
     #[cfg(not(target_os = "macos"))]
-    assert!(devices.is_empty(), "Should find no Metal devices on non-macOS");
+    assert!(
+        devices.is_empty(),
+        "Should find no Metal devices on non-macOS"
+    );
 }
 
 // F047: Device properties accurate
@@ -271,8 +284,14 @@ fn test_f047_device_properties() {
     let devices = MetalCompute::devices();
     for device in &devices {
         assert!(!device.name.is_empty(), "Device should have a name");
-        assert!(device.max_buffer_length > 0, "Device should have buffer capacity");
-        assert!(device.max_threads_per_threadgroup > 0, "Device should have thread capacity");
+        assert!(
+            device.max_buffer_length > 0,
+            "Device should have buffer capacity"
+        );
+        assert!(
+            device.max_threads_per_threadgroup > 0,
+            "Device should have thread capacity"
+        );
     }
 }
 
@@ -299,9 +318,15 @@ fn test_f060_threadgroup_limits() {
 fn test_f031_f032_neural_engine_detection() {
     let available = NeuralEngineSession::is_available();
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    assert!(available, "Neural Engine should be available on Apple Silicon");
+    assert!(
+        available,
+        "Neural Engine should be available on Apple Silicon"
+    );
     #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
-    assert!(!available, "Neural Engine should not be available on non-Apple Silicon");
+    assert!(
+        !available,
+        "Neural Engine should not be available on non-Apple Silicon"
+    );
 }
 
 // F038: Invalid model path returns Error
@@ -327,8 +352,14 @@ fn test_f071_uma_allocation() {
 #[test]
 fn test_f076_metal_alignment() {
     let buffer = UmaBuffer::new(1024).expect("Allocation failed");
-    assert!(buffer.is_aligned(), "Buffer should be page-aligned for Metal");
-    assert!(buffer.allocated_size() >= 4096, "Should allocate at least one page");
+    assert!(
+        buffer.is_aligned(),
+        "Buffer should be page-aligned for Metal"
+    );
+    assert!(
+        buffer.allocated_size() >= 4096,
+        "Should allocate at least one page"
+    );
 }
 
 // F078: Large allocation failure returns Error

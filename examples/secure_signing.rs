@@ -36,12 +36,20 @@ fn main() -> Result<(), manzana::Error> {
     let pubkey = signer.public_key();
     println!("Public Key (P-256):");
     println!("  Length: {} bytes (uncompressed)", pubkey.as_bytes().len());
-    println!("  X: {:02x}{:02x}...{:02x}{:02x}",
-        pubkey.x()[0], pubkey.x()[1],
-        pubkey.x()[30], pubkey.x()[31]);
-    println!("  Y: {:02x}{:02x}...{:02x}{:02x}",
-        pubkey.y()[0], pubkey.y()[1],
-        pubkey.y()[30], pubkey.y()[31]);
+    println!(
+        "  X: {:02x}{:02x}...{:02x}{:02x}",
+        pubkey.x()[0],
+        pubkey.x()[1],
+        pubkey.x()[30],
+        pubkey.x()[31]
+    );
+    println!(
+        "  Y: {:02x}{:02x}...{:02x}{:02x}",
+        pubkey.y()[0],
+        pubkey.y()[1],
+        pubkey.y()[30],
+        pubkey.y()[31]
+    );
     println!();
 
     // Sign some data
@@ -49,20 +57,28 @@ fn main() -> Result<(), manzana::Error> {
     println!("Signing message: \"{}\"", String::from_utf8_lossy(message));
 
     let signature = signer.sign(message)?;
-    println!("✓ Signature created: {} bytes (DER format)", signature.len());
+    println!(
+        "✓ Signature created: {} bytes (DER format)",
+        signature.len()
+    );
     println!();
 
     // Verify the signature
     println!("Verifying signature...");
     let valid = signer.verify(message, &signature)?;
-    println!("{} Signature valid: {}", if valid { "✓" } else { "❌" }, valid);
+    println!(
+        "{} Signature valid: {}",
+        if valid { "✓" } else { "❌" },
+        valid
+    );
     println!();
 
     // Demonstrate invalid signature detection
     println!("Testing tampered message...");
     let tampered = b"Hello, Tampered AI!";
     let still_valid = signer.verify(tampered, &signature)?;
-    println!("{} Tampered message rejected: {}",
+    println!(
+        "{} Tampered message rejected: {}",
         if still_valid { "❌" } else { "✓" },
         !still_valid
     );
