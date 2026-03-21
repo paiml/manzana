@@ -283,6 +283,10 @@ Contributions are welcome. Please open an issue or pull request on [GitHub](http
 3. Run `make tier2` to validate
 4. Submit a pull request
 
+## See Also
+
+- [Cookbook](https://github.com/paiml/sovereign-ai-cookbook)
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
