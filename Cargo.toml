@@ -27,6 +27,7 @@ full = ["afterburner", "neural-engine", "metal", "secure-enclave"]
 thiserror = "1.0"
 tracing = "0.1"
 bitflags = "2.0"
+provable-contracts-macros = "0.1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.10"

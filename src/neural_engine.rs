@@ -116,6 +116,7 @@ impl Tensor {
     /// # Errors
     ///
     /// Returns an error if data length doesn't match shape.
+    #[provable_contracts_macros::contract("manzana-tensor-v1", equation = "new")]
     pub fn new(shape: Vec<usize>, data: Vec<f32>) -> Result<Self> {
         let expected_len: usize = shape.iter().product();
         if data.len() != expected_len {

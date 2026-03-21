@@ -339,6 +339,7 @@ dependencies = [
  "criterion",
  "mach2",
  "proptest",
+ "provable-contracts-macros",
  "thiserror",
  "tracing",
  "tracing-subscriber",
@@ -459,6 +460,17 @@ dependencies = [
  "rusty-fork",
  "tempfile",
  "unarray",
+]
+
+[[package]]
+name = "provable-contracts-macros"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c383d865124fe9fda96af4a04d0c2641bcb93e16eb5e13f7c665f98c15333447"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
