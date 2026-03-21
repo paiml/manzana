@@ -22,7 +22,7 @@ proof_obligations:
 falsification_tests:
   - id: FALSIFY-DISPATCH-001
     rule: "Backend selection correctness"
-    test: "test_device_creation"
+    test: "test_devices_no_panic"
     prediction: "verified"
     if_fails: "Contract violation — dispatch selected invalid backend"
 
@@ -39,4 +39,4 @@ qa_gate:
   name: "dispatch contract"
   min_coverage: 0.90
   max_complexity: 20
-  required_tests: ["test_device_creation"]
+  required_tests: ["test_devices_no_panic"]
