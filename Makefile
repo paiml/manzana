@@ -5,7 +5,7 @@
 # Tier 2: ON-COMMIT (1-5 min) - Comprehensive pre-commit validation
 # Tier 3: ON-MERGE (hours) - Exhaustive quality assurance
 
-.PHONY: all tier1 tier2 tier3 test coverage mutation miri bench fmt lint audit clean help
+.PHONY: all tier1 tier2 tier3 test test-fast coverage mutation miri bench fmt lint audit clean help
 
 # Default target
 all: tier2
@@ -43,6 +43,10 @@ lint:
 	cargo clippy --all-targets -- -D warnings -D clippy::pedantic -D clippy::nursery \
 		-A clippy::module_name_repetitions \
 		-A clippy::must_use_candidate
+
+test-fast:
+	@echo "🧪 Running fast tests..."
+	cargo test --lib -- --test-threads=4
 
 test:
 	@echo "🧪 Running all tests..."

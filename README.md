@@ -1,21 +1,48 @@
-# Manzana
-
 <div align="center">
-  <img src="docs/hero.svg" alt="Manzana - Apple Hardware for Sovereign AI" width="600">
 
-  **Safe Rust interfaces to Apple hardware for Sovereign AI**
+<img src="docs/hero.svg" alt="Manzana - Apple Hardware for Sovereign AI" width="600">
 
-  [![Crates.io](https://img.shields.io/crates/v/manzana.svg)](https://crates.io/crates/manzana)
-  [![Documentation](https://docs.rs/manzana/badge.svg)](https://docs.rs/manzana)
-  [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-  [![Tests](https://img.shields.io/badge/tests-174%20passing-green.svg)]()
+<h1 align="center">Manzana</h1>
+
+<p align="center">
+  <strong>Safe Rust interfaces to Apple hardware for Sovereign AI</strong>
+</p>
+
+<p align="center">
+  <a href="https://crates.io/crates/manzana"><img src="https://img.shields.io/crates/v/manzana.svg" alt="Crates.io"></a>
+  <a href="https://docs.rs/manzana"><img src="https://docs.rs/manzana/badge.svg" alt="Documentation"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="https://github.com/paiml/manzana"><img src="https://img.shields.io/badge/tests-174%20passing-green.svg" alt="Tests"></a>
+</p>
+
 </div>
 
 ---
 
+## Table of Contents
+
+- [Overview](#overview)
+- [Features](#features)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Examples](#examples)
+- [Safety Architecture](#safety-architecture)
+- [Contributing](#contributing)
+- [License](#license)
+
 ## Overview
 
 Manzana (Spanish: "apple") provides **safe, pure Rust interfaces** to Apple hardware subsystems for the Sovereign AI Stack. It enables on-premise, privacy-preserving machine learning workloads on macOS by exposing Apple-specific accelerators through memory-safe abstractions.
+
+## Features
+
+- **Afterburner FPGA** -- Mac Pro ProRes decode acceleration (23x 4K streams)
+- **Neural Engine** -- Apple Silicon CoreML inference at 15.8+ TOPS
+- **Metal GPU** -- General-purpose GPU compute with multi-GPU support
+- **Secure Enclave** -- P-256 ECDSA signing with hardware-bound keys
+- **Unified Memory** -- Zero-copy CPU/GPU data sharing for ML tensors
+- **100% Safe Public API** -- All unsafe code quarantined in audited FFI layer
+- **Property-based Testing** -- 174 tests including proptest and chaos testing
 
 ## Supported Hardware
 
@@ -246,6 +273,15 @@ Manzana is part of the [Batuta](https://github.com/paiml/batuta) Sovereign AI or
 |                    +-------------+                                  |
 +---------------------------------------------------------------------+
 ```
+
+## Contributing
+
+Contributions are welcome. Please open an issue or pull request on [GitHub](https://github.com/paiml/manzana).
+
+1. Fork the repository
+2. Create your feature branch
+3. Run `make tier2` to validate
+4. Submit a pull request
 
 ## License
 
