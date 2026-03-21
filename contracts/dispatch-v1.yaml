@@ -1,0 +1,42 @@
+metadata:
+  version: "1.0.0"
+  author: "Sovereign AI Stack"
+  description: "Hardware dispatch contract for manzana Apple framework bindings"
+  crate: "manzana"
+  references:
+    - "Apple Metal Best Practices Guide, 2024"
+
+equations:
+  dispatch_selection:
+    formula: "backend = select(capabilities, task_requirements)"
+    domain: "capabilities ∈ {Metal, CPU}, task ∈ {compute, render}"
+    invariants:
+      - "Fallback to CPU when Metal unavailable"
+
+proof_obligations:
+  - type: invariant
+    property: "Dispatch always selects a valid backend"
+    formal: "∀task: dispatch(task) ∈ {Metal, CPU}"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-DISPATCH-001
+    rule: "Backend selection correctness"
+    test: "test_device_creation"
+    prediction: "verified"
+    if_fails: "Contract violation — dispatch selected invalid backend"
+
+kani_harnesses:
+  - id: KANI-DISPATCH-001
+    obligation: PO-DISPATCH-001
+    property: "Dispatch correctness"
+    bound: 8
+    strategy: bounded_int
+    harness: verify_dispatch
+
+qa_gate:
+  id: QA-DISPATCH
+  name: "dispatch contract"
+  min_coverage: 0.90
+  max_complexity: 20
+  required_tests: ["test_device_creation"]
