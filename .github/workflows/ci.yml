@@ -1,4 +1,4 @@
-# Manzana CI Pipeline
+# Manzana CI Pipeline — self-hosted clean-room runners for sovereignty (§2.1.1)
 # Three-Tiered Certeza Testing (Iron Lotus Framework)
 #
 # Tier 1: ON-SAVE - Fast checks (<3s locally, ~1min CI)
@@ -12,6 +12,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -23,7 +24,7 @@ jobs:
   # ==========================================================================
   tier1:
     name: Tier 1 - Fast Checks
-    runs-on: macos-latest
+    runs-on: [self-hosted, clean-room]
     steps:
       - uses: actions/checkout@v4
 
@@ -55,7 +56,7 @@ jobs:
   # ==========================================================================
   tier2:
     name: Tier 2 - Full Validation
-    runs-on: macos-latest
+    runs-on: [self-hosted, clean-room]
     needs: tier1
     steps:
       - uses: actions/checkout@v4
@@ -92,18 +93,17 @@ jobs:
       - name: Coverage (target 90%)
         run: cargo llvm-cov --lib --fail-under 90
 
-      - name: Install cargo-audit
-        run: cargo install cargo-audit
-
       - name: Security audit
-        run: cargo audit
+        run: |
+          cargo install cargo-audit --locked || true
+          cargo audit
 
   # ==========================================================================
   # TIER 3: Exhaustive QA (on merge to main only)
   # ==========================================================================
   tier3:
     name: Tier 3 - Exhaustive QA
-    runs-on: macos-latest
+    runs-on: [self-hosted, clean-room]
     needs: tier2
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
@@ -144,22 +144,16 @@ jobs:
         run: cargo bench --no-run
 
   # ==========================================================================
-  # Cross-platform Build Check
+  # Gate
   # ==========================================================================
-  cross-platform:
-    name: Build (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [macos-latest, ubuntu-latest]
+  gate:
+    name: gate
+    runs-on: [self-hosted, clean-room]
+    if: always()
+    needs: [tier1, tier2]
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build
-        run: cargo build --lib
-
-      - name: Test (lib only)
-        run: cargo test --lib
+      - name: Check all jobs
+        run: |
+          if [ "${{ needs.tier1.result }}" = "failure" ] || [ "${{ needs.tier2.result }}" = "failure" ]; then
+            exit 1
+          fi
