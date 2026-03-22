@@ -123,6 +123,7 @@ impl MetalCompute {
     /// Uses `system_profiler` to detect real GPU hardware on macOS.
     /// Returns an empty vector on non-macOS platforms.
     #[must_use]
+    #[allow(clippy::missing_const_for_fn)]
     pub fn devices() -> Vec<MetalDevice> {
         #[cfg(target_os = "macos")]
         {
