@@ -215,6 +215,7 @@ impl AfterburnerMonitor {
     ///
     /// This is a static method that can be called without creating a monitor.
     #[must_use]
+    #[allow(clippy::missing_const_for_fn)]
     pub fn is_available() -> bool {
         find_afterburner_service().is_some()
     }
