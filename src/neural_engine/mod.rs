@@ -55,16 +55,19 @@ pub enum AneOp {
 
 impl std::fmt::Display for AneOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Convolution => write!(f, "Convolution"),
-            Self::MatMul => write!(f, "MatMul"),
-            Self::Pooling => write!(f, "Pooling"),
-            Self::Activation => write!(f, "Activation"),
-            Self::Normalization => write!(f, "Normalization"),
-            Self::Elementwise => write!(f, "Elementwise"),
-            Self::Reshape => write!(f, "Reshape"),
-            Self::Attention => write!(f, "Attention"),
-        }
+        // One arm per variant selecting a &str, rather than eight near-identical
+        // `write!` calls. Same output, and the compiler still forces a new
+        // variant to be handled here.
+        f.write_str(match self {
+            Self::Convolution => "Convolution",
+            Self::MatMul => "MatMul",
+            Self::Pooling => "Pooling",
+            Self::Activation => "Activation",
+            Self::Normalization => "Normalization",
+            Self::Elementwise => "Elementwise",
+            Self::Reshape => "Reshape",
+            Self::Attention => "Attention",
+        })
     }
 }
 
@@ -81,49 +84,6 @@ pub struct AneCapabilities {
     pub chip_generation: String,
     /// Number of neural engine cores.
     pub core_count: u32,
-}
-
-impl AneCapabilities {
-    /// Apple's **published** figures for the M1: 15.8 TOPS, 16 cores.
-    ///
-    /// Specification numbers for one chip, not a measurement of the machine
-    /// you are on, and wrong on any part that is not an M1.
-    ///
-    /// There is deliberately no `impl Default for AneCapabilities`: since
-    /// [`NeuralEngineSession::capabilities`] returns `Option`,
-    /// `capabilities().unwrap_or_default()` would hand these figures to a
-    /// caller who never asked for them -- on any machine at all. That is the
-    /// fabrication RUSTSEC-2026-0273 names, re-entering through a trait impl.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use manzana::AneCapabilities;
-    ///
-    /// let m1 = AneCapabilities::m1_baseline();
-    /// assert!((m1.tops - 15.8).abs() < f64::EPSILON);
-    /// assert_eq!(m1.core_count, 16);
-    /// assert_eq!(m1.chip_generation, "Unknown");
-    /// ```
-    #[must_use]
-    pub fn m1_baseline() -> Self {
-        Self {
-            tops: 15.8,
-            max_batch_size: 32,
-            supported_ops: vec![
-                AneOp::Convolution,
-                AneOp::MatMul,
-                AneOp::Pooling,
-                AneOp::Activation,
-                AneOp::Normalization,
-                AneOp::Elementwise,
-                AneOp::Reshape,
-                AneOp::Attention,
-            ],
-            chip_generation: "Unknown".to_string(),
-            core_count: 16,
-        }
-    }
 }
 
 /// Simple tensor type for inference input/output.
@@ -280,9 +240,10 @@ impl NeuralEngineSession {
     /// wrong on every chip but an M1.
     ///
     /// Because this returns `Option`, there is deliberately no `Default` on
-    /// [`AneCapabilities`] for `unwrap_or_default()` to reach. If you want the
-    /// published M1 numbers as a placeholder, name them:
-    /// [`AneCapabilities::m1_baseline`].
+    /// [`AneCapabilities`] for `unwrap_or_default()` to reach, and no
+    /// constructor that hands out a chip's published figures either. manzana
+    /// states no TOPS or core count for any Apple part: it cannot measure one,
+    /// and it declines to repeat one.
     #[must_use]
     #[allow(clippy::missing_const_for_fn)]
     pub fn capabilities() -> Option<AneCapabilities> {

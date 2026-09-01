@@ -163,10 +163,19 @@ mod tests {
         assert!(super::iokit::find_afterburner_service().is_none());
     }
 
+    /// A defaulted `AfterburnerRawStats` must report that NOTHING was measured.
+    ///
+    /// Was `let _ = ...::default();` under the name `test_module_compiles` --
+    /// it asserted nothing and passed against any constant struct, including
+    /// one carrying the fabricated `23`.
     #[test]
-    fn test_module_compiles() {
-        // Verifies the module structure is correct
-        // This test passes if compilation succeeds
-        let _ = super::iokit::AfterburnerRawStats::default();
+    fn test_raw_stats_default_measures_nothing() {
+        let raw = super::iokit::AfterburnerRawStats::default();
+        assert!(raw.streams_active.is_none());
+        assert!(raw.streams_capacity.is_none(), "23 must not come back");
+        assert!(raw.utilization.is_none());
+        assert!(raw.throughput_fps.is_none());
+        assert!(raw.temperature.is_none());
+        assert!(raw.power.is_none());
     }
 }

@@ -8,7 +8,7 @@ afterburner::tests::test_default_does_not_reconstitute_the_marketed_capacity
 afterburner::tests::test_default_stats_zero_streams
 afterburner::tests::test_each_required_key_is_individually_required
 afterburner::tests::test_is_active_propagates_the_read_failure
-afterburner::tests::test_is_available_static
+afterburner::tests::test_is_available_agrees_with_itself_and_the_platform
 afterburner::tests::test_new_graceful_on_missing_hardware
 afterburner::tests::test_prores_codec_display
 afterburner::tests::test_prores_codec_equality
@@ -33,7 +33,7 @@ e2e_uma_buffer_is_a_real_allocation
 error::tests::test_display_impl_not_generic
 error::tests::test_error_clone
 error::tests::test_error_code_extraction
-error::tests::test_error_constructors
+error::tests::test_error_constructors_build_what_they_name
 error::tests::test_error_debug
 error::tests::test_error_equality
 error::tests::test_error_implements_std_error
@@ -41,8 +41,8 @@ error::tests::test_error_messages_are_readable
 error::tests::test_error_predicates
 error::tests::test_iokit_error_includes_code
 error::tests::test_subsystem_display
-ffi::tests::test_module_compiles
 ffi::tests::test_non_macos_get_stats_reports_absence
+ffi::tests::test_raw_stats_default_measures_nothing
 metal::parse_tests::test_parse_drops_a_vram_line_with_no_device
 metal::parse_tests::test_parse_falls_back_when_there_is_no_vram_line
 metal::parse_tests::test_parse_finds_every_gpu_not_just_the_first
@@ -80,10 +80,8 @@ neural_engine::tests::test_infer_refuses_when_reachable
 neural_engine::tests::test_is_available_matches_build_target
 neural_engine::tests::test_load_is_unimplemented_not_fabricated
 neural_engine::tests::test_load_rejects_bad_extension_distinctly
-neural_engine::tests::test_m1_baseline_is_available_when_named
-neural_engine::tests::test_m1_baseline_values
 neural_engine::tests::test_model_path_accessor
-neural_engine::tests::test_no_default_hands_out_hardware_figures
+neural_engine::tests::test_no_chip_specification_is_reachable
 neural_engine::tests::test_tensor_new_invalid_size
 neural_engine::tests::test_tensor_new_valid
 neural_engine::tests::test_tensor_zeros
@@ -149,7 +147,6 @@ src/metal/types.rs - metal::types::MetalDevice
 src/metal/types.rs - metal::types::MetalDevice::is_apple_silicon
 src/metal/types.rs - metal::types::MetalDevice::vram_gb
 src/neural_engine/mod.rs - neural_engine
-src/neural_engine/mod.rs - neural_engine::AneCapabilities::m1_baseline
 src/neural_engine/mod.rs - neural_engine::NeuralEngineSession::load
 src/neural_engine/mod.rs - neural_engine::Tensor::numel
 src/unified_memory/buffer.rs - unified_memory::buffer::UmaBuffer
@@ -187,11 +184,11 @@ test_is_acceleration_available_no_crash
 test_is_macos_platform_detection
 test_prores_codec_all_variants
 test_version_semver_format
+tests::test_acceleration_available_is_the_documented_disjunction
 tests::test_acceleration_presence_vs_usability
 tests::test_afterburner_reexport
 tests::test_error_reexport
-tests::test_is_acceleration_available_no_panic
-tests::test_is_macos_consistent
+tests::test_is_macos_matches_the_build_target
 tests::test_prores_codec_reexport
 tests::test_version_not_empty
 unified_memory::tests::test_allocation_success

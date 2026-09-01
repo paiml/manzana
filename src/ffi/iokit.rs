@@ -121,10 +121,11 @@ impl Drop for AfterburnerService {
 
 /// Statistics as read from the IO registry, before range checking.
 ///
-/// A field here is whatever the registry held, or the fallback that
-/// [`parse_afterburner_properties`] substituted when the property was missing —
-/// the two are not distinguished at this layer. `crate::afterburner` applies
-/// the range checks and documents the result for callers.
+/// Every field is `Some` only if the registry held it; an absent or
+/// wrong-typed property is `None`. Nothing is substituted at this layer, so
+/// "absent" and "read as zero" are distinguishable here.
+/// `crate::afterburner` then applies the range checks, and turns a `None` in a
+/// required field into an error.
 #[derive(Debug, Clone, Default)]
 pub struct AfterburnerRawStats {
     /// Active decode streams. `None` if the property was absent.
@@ -297,13 +298,17 @@ impl AfterburnerService {
 
 /// Reads the Afterburner statistics out of a registry property dictionary.
 ///
-/// A property that is absent, or that is not a `CFNumber`, is replaced by the
-/// fallback shown below rather than reported as missing. That means a registry
-/// whose key names differ from the ones looked up here parses into a
-/// plausible idle card. The substitution is deliberate — a card that reports
-/// nothing is not an error — but it is why
-/// [`crate::afterburner::AfterburnerStats`] documents each field's fallback:
-/// callers cannot otherwise tell a default from a reading.
+/// A property that is absent, or that is not a `CFNumber`, becomes `None`.
+/// Nothing is substituted here, and `crate::afterburner` turns a `None` in a
+/// required field into `Err` rather than a snapshot — so a registry whose key
+/// names differ from the ones looked up here reports a failure to read, not a
+/// plausible idle card.
+///
+/// Until 0.3.0 it did exactly that: the absent property took a fallback (`23`
+/// for `StreamsCapacity`), the substitution was described as deliberate, and
+/// callers could not tell a default from a reading. This doc said so, and went
+/// on saying so after the code changed — the sixth copy of that claim found in
+/// this crate, and the last.
 ///
 /// The key names below, like the service class names, are unverified in this
 /// repository. No Afterburner hardware appears in the test evidence.

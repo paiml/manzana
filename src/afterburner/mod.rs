@@ -173,7 +173,7 @@ impl AfterburnerMonitor {
     ///
     /// - [`Error::IoKit`] with code `0` if the dictionary is readable but does
     ///   not carry one of `StreamsActive`, `StreamsCapacity`, `Utilization` or
-    ///   `Throughput`. The message names the missing key.
+    ///   `ThroughputFPS`. The message names the missing key.
     ///
     /// That last case is new in 0.3.0, and this section previously said the
     /// opposite of it in as many words: "a registry that contains none of the

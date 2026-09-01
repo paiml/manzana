@@ -41,7 +41,7 @@ WORK="$(mktemp -d)" || die "cannot create work directory"
 cleanup() {
   [ -n "${WORK:-}" ] || return 0
   [ -d "$WORK" ] || return 0
-  for f in names.txt out.txt; do [ -e "$WORK/$f" ] && rm -f -- "$WORK/$f"; done
+  for f in names.txt out.txt run.txt; do [ -e "$WORK/$f" ] && rm -f -- "$WORK/$f"; done
   rmdir -- "$WORK" 2>/dev/null || true
 }
 trap cleanup EXIT
@@ -78,14 +78,23 @@ total=$(wc -l < "$WORK/names.txt" | tr -d ' ')
 # Guarded end to end. Under `set -euo pipefail` an unparseable "N ignored"
 # figure previously killed the script with exit 1 and NO output, silently
 # removing assertion 1 -- the gate's headline check -- rather than failing it.
-ignored=$( { cargo test --all-features 2>/dev/null \
-             | grep -oE '[0-9]+ ignored' \
+# The run is captured ONCE, and the presence of a `test result:` line is what
+# distinguishes "genuinely 0 ignored" from "we could not read the output".
+# Previously `ignored="${ignored:-0}"` ran BEFORE the numeric check, so an
+# empty parse silently became 0 and the die() below -- whose message reads
+# "refusing to assume 0" -- could never fire for the case it names. A gate
+# that assumes the passing value exactly when its instrument fails is the
+# defect this whole file exists to catch.
+cargo test --all-features > "$WORK/run.txt" 2>/dev/null || true
+grep -q '^test result:' "$WORK/run.txt" \
+  || die "no 'test result:' line in the test output; the ignored count cannot be read, and 0 must not be assumed"
+
+ignored=$( { grep -oE '[0-9]+ ignored' "$WORK/run.txt" \
              | grep -oE '^[0-9]+' \
              | paste -sd+ - || true; } | head -1 )
-if [ -n "${ignored:-}" ]; then
-  ignored=$( { echo "$ignored" | bc 2>/dev/null || true; } | head -1 )
-fi
-ignored="${ignored:-0}"
+[ -n "${ignored:-}" ] \
+  || die "'test result:' lines present but no 'N ignored' field; refusing to assume 0"
+ignored=$( { echo "$ignored" | bc 2>/dev/null || true; } | head -1 )
 case "$ignored" in
   ''|*[!0-9]*) die "could not parse the ignored-test count; refusing to assume 0" ;;
   *) : ;;

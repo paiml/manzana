@@ -61,17 +61,63 @@ fn test_subsystem_display() {
     assert_eq!(Subsystem::UnifiedMemory.to_string(), "Unified Memory");
 }
 
+/// Every constructor must build the variant it names, and carry its argument.
+///
+/// Was nine `let _ = ...` lines. It passed if every constructor were replaced
+/// by a single constant -- `Error::timeout(0)` for all nine would have been
+/// green. An error type whose constructors are untested is a poor foundation
+/// for a crate whose central claim is that it returns the right error.
 #[test]
-fn test_error_constructors() {
-    let _ = Error::not_available(Subsystem::Afterburner);
-    let _ = Error::iokit(0, "msg");
-    let _ = Error::metal("msg");
-    let _ = Error::coreml("msg");
-    let _ = Error::invalid_input("msg");
-    let _ = Error::timeout(100);
-    let _ = Error::permission_denied("op");
-    let _ = Error::not_found("res");
-    let _ = Error::internal("details");
+fn test_error_constructors_build_what_they_name() {
+    let e = Error::not_available(Subsystem::Afterburner);
+    assert!(e.is_not_available());
+    assert!(e.to_string().contains("Afterburner"));
+
+    let e = Error::iokit(42, "msg");
+    assert_eq!(e.error_code(), Some(42), "the kern_return_t must survive");
+    assert!(e.to_string().contains("msg"));
+
+    for (e, needle) in [
+        (Error::metal("mmm"), "mmm"),
+        (Error::coreml("ccc"), "ccc"),
+        (Error::invalid_input("iii"), "iii"),
+        (Error::permission_denied("ppp"), "ppp"),
+        (Error::not_found("nnn"), "nnn"),
+        (Error::internal("ddd"), "ddd"),
+    ] {
+        assert!(
+            e.to_string().contains(needle),
+            "constructor dropped its argument: {e}"
+        );
+    }
+
+    let e = Error::timeout(100);
+    assert!(
+        e.to_string().contains("100"),
+        "the timeout duration must reach the message: {e}"
+    );
+
+    // The variants must be DISTINGUISHABLE -- a single constant would satisfy
+    // every assertion above if they all rendered the same.
+    let rendered = [
+        Error::not_available(Subsystem::Metal).to_string(),
+        Error::metal("x").to_string(),
+        Error::coreml("x").to_string(),
+        Error::invalid_input("x").to_string(),
+        Error::timeout(1).to_string(),
+        Error::permission_denied("x").to_string(),
+        Error::not_found("x").to_string(),
+        Error::internal("x").to_string(),
+    ];
+    let mut unique: Vec<&String> = rendered.iter().collect();
+    unique.sort_unstable();
+    unique.dedup();
+    assert_eq!(
+        unique.len(),
+        rendered.len(),
+        "two constructors render identically, so a caller cannot tell them \
+         apart: {rendered:?}"
+    );
 }
 
 #[test]

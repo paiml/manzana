@@ -242,10 +242,10 @@ fn test_detect_gpu_vram() {
     // F3 shape -- a test that cannot fail is not evidence -- and it is the
     // shape that let 0.2.0's fabrications through a green suite.
     //
-    // Asserting non-emptiness here adds no CI risk that
-    // `test_detect_real_gpus` does not already carry: that test indexes
-    // `devices[0]` unguarded, so a macOS host with no enumerable GPU already
-    // fails the suite.
+    // It does not assert non-emptiness unconditionally. An earlier revision
+    // did, on the reasoning that `test_detect_real_gpus` indexes `devices[0]`
+    // unguarded anyway -- but that sibling is now host-aware too, so the
+    // reasoning no longer holds and this comment used to still assert it.
     let devices = MetalCompute::devices();
     if !system_profiler_named_a_gpu() {
         assert!(
@@ -260,8 +260,11 @@ fn test_detect_gpu_vram() {
     );
 
     let first = &devices[0];
-    // Mac Pro AMD GPUs report 16 GiB; Apple Silicon reports unified memory.
-    // Either way a real device reports at least 1 GiB.
+    // At least 1 GiB. Note this is NOT necessarily a measurement: on Apple
+    // Silicon system_profiler prints no VRAM line and the figure is manzana's
+    // 16 GiB constant, so on that path this asserts the constant is sane
+    // rather than that the device reported anything. `reported_vram_bytes`
+    // is what separates the two, and parse_tests pins that directly.
     assert!(
         first.vram_gb() >= 1.0,
         "GPU should report at least 1 GiB VRAM, got: {} GiB",

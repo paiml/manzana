@@ -23,15 +23,20 @@
 //! itself. The per-field documentation says which, for each one. No field is
 //! queried from a Metal device, because no Metal device is ever opened.
 //!
-//! The parser is a flat line scan with no awareness of the report's nesting: it
-//! trims each line's indentation, then treats any line ending in `:` as the
-//! start of a new device unless that line begins with `Graphics` or contains
-//! `Displays`, `VRAM`, `Vendor`, `Device`, `Bus`, `Slot`, or `Metal`. Any other
-//! `:`-terminated line anywhere in the report — including one nested beneath a
-//! device — becomes another [`MetalDevice`]. The parsing code is not a separate
-//! function and no test feeds it known input, so the device list has never been
-//! checked against a report the crate did not read from the machine it was
-//! running on.
+//! The parser is a flat line scan keyed on `Chipset Model:`, the field every
+//! GPU stanza carries. A line that is not one of those names no device; a
+//! `VRAM` line is attributed to the stanza it appears in, and one appearing
+//! before any stanza is dropped. It lives in `detect::parse_displays`, a
+//! separate function taking `&str`, and `src/metal/parse_tests.rs` feeds it
+//! known input on every platform — including reports naming no GPU at all,
+//! where it must return an empty list rather than invent one.
+//!
+//! Until 0.3.0 it was a BLACKLIST: any line ending in `:` started a new device
+//! unless it began with `Graphics` or contained one of seven words. Fed the
+//! `Software:` / `System Software Overview:` stanza shape, that produced two
+//! devices with those names and a 4 GiB buffer length each — well-formed,
+//! plausible, entirely fictional. It was also unreachable by any test, because
+//! the parsing was inline in the shell-out and no fixture could reach it.
 //!
 //! When `system_profiler` cannot be run, exits non-zero, or yields no device,
 //! `devices()` returns an empty vector. It does not substitute a placeholder.

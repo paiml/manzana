@@ -124,7 +124,9 @@ fn compute_pipeline() {
     println!("Shader compilation, buffer allocation and dispatch are not");
     println!("implemented: they return Error::Unimplemented on every platform,");
     println!("for every argument, rather than a value that resembles a result.");
-    println!("See docs/specifications/security-architecture-plan.md");
+    // docs/ is excluded from the published crate, so a reader who got this
+    // example from crates.io does not have that file. Point at what ships.
+    println!("See the `metal` module docs, or README.md in this crate.");
 }
 
 /// Print one line inside a panel, truncated so the border cannot be pushed out.

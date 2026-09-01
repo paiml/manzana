@@ -330,11 +330,35 @@ fn test_convert_raw_stats_filters_invalid_power() {
     assert!(stats2.power_watts.is_none());
 }
 
+/// The free function and the associated one must give the same answer, and
+/// off macOS both must be `false`.
+///
+/// Was `let _ = ...` twice, asserting nothing: it passed against either
+/// constant, including a `true` that would be the 0.2.0 capability lie exactly.
 #[test]
-fn test_is_available_static() {
-    // Should not panic
-    let _ = AfterburnerMonitor::is_available();
-    let _ = is_available();
+fn test_is_available_agrees_with_itself_and_the_platform() {
+    let associated = AfterburnerMonitor::is_available();
+    assert_eq!(
+        associated,
+        is_available(),
+        "the free function must not disagree with the associated one"
+    );
+
+    #[cfg(not(target_os = "macos"))]
+    assert!(
+        !associated,
+        "there is no IOKit off macOS, so a card cannot be found -- returning \
+         true here is the shape of the defect this release removed"
+    );
+
+    // On macOS the answer depends on whether a card is fitted, so the binding
+    // claim is the weaker one: presence must imply a constructible monitor.
+    #[cfg(target_os = "macos")]
+    assert_eq!(
+        associated,
+        AfterburnerMonitor::new().is_some(),
+        "is_available() must not claim a card that new() cannot open"
+    );
 }
 
 /// F024: repeated polling does not crash, and does not start inventing data.

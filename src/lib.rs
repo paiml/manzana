@@ -24,8 +24,7 @@
 //! reach the hardware. Plain data types that never touch a device do work, and
 //! are not exceptions to it — [`Tensor`] really allocates and really validates
 //! that `shape` and `data` agree (returning [`Error::InvalidInput`] when they
-//! do not), [`AneCapabilities::m1_baseline`] hands back Apple's published M1
-//! figures under a name that says so, and [`AfterburnerStats`]'s accessors read
+//! do not), and [`AfterburnerStats`]'s accessors read
 //! fields of a snapshot you already hold. None of them queries anything.
 //!
 //! What each row does and does not establish:
@@ -208,9 +207,12 @@
 //! [RUSTSEC-2026-0273]: https://rustsec.org/advisories/RUSTSEC-2026-0273.html
 //! [`security-framework`]: https://crates.io/crates/security-framework
 
-// SAFETY: This crate denies unsafe code at the library level.
-// All unsafe FFI code is quarantined in src/ffi/, which is not exported.
-// We use deny (not forbid) so it can be overridden in the ffi module.
+// SAFETY: This crate denies unsafe code at the library level, and two modules
+// override it: `ffi` (IOKit calls, not exported) and `unified_memory` (the
+// alloc_zeroed/dealloc pair behind UmaBuffer). This comment used to say all
+// unsafe was quarantined in src/ffi/, which the crate docs 40 lines above
+// already contradicted.
+// deny rather than forbid, so those two can override it.
 #![deny(unsafe_code)]
 #![warn(missing_docs)]
 #![warn(clippy::pedantic)]
@@ -328,16 +330,39 @@ mod tests {
         assert!(!VERSION.is_empty());
     }
 
+    /// `is_macos()` must agree with the build target it is derived from.
+    ///
+    /// This was `let _ = is_macos();` with no assertion -- it passed against
+    /// `true`, against `false`, and against any constant. A test that cannot
+    /// fail is not evidence, which is the whole subject of this release.
     #[test]
-    fn test_is_macos_consistent() {
-        // This test just verifies the function works
-        let _ = is_macos();
+    fn test_is_macos_matches_the_build_target() {
+        assert_eq!(is_macos(), cfg!(target_os = "macos"));
     }
 
+    /// Presence is the disjunction of the four subsystem predicates, and the
+    /// unified-memory one never contributes because it is always `false`.
+    ///
+    /// Also `let _ = ...` before: it asserted nothing about the answer.
     #[test]
-    fn test_is_acceleration_available_no_panic() {
-        // Should not panic on any platform
-        let _ = is_acceleration_available();
+    fn test_acceleration_available_is_the_documented_disjunction() {
+        let expected = afterburner::is_available()
+            || neural_engine::is_available()
+            || metal::is_available()
+            || unified_memory::is_available();
+        assert_eq!(is_acceleration_available(), expected);
+
+        assert!(
+            !unified_memory::is_available(),
+            "the doc says this one never contributes; if it ever can, the \
+             sentence above it stops being true"
+        );
+
+        // Presence is not usability -- the distinction this crate exists for.
+        assert!(
+            !is_acceleration_usable(),
+            "manzana can drive none of it in 0.3.0"
+        );
     }
 
     #[test]

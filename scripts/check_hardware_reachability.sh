@@ -221,6 +221,7 @@ for f in "${HW_PATHS[@]}"; do
       sub(/.*fn[[:space:]]+/, "", name); sub(/[(<].*/, "", name)
       qual = (impltype == "") ? name : impltype "::" name
       capturing=1; start=NR; body=""; callbody=""; depth=0; sig=""; insig=1
+      inblock=0
     }
     capturing {
       line=$0; gsub(/\t/, " ", line)
@@ -229,20 +230,41 @@ for f in "${HW_PATHS[@]}"; do
       # refusing, and a comment naming a boundary-reaching function certified
       # it as reaching -- both limbs satisfiable by prose. Braces inside
       # comments also corrupted the extent counting.
-      sub(/\/\/.*$/, "", line)
-      # Same for /* */ block comments and STRING LITERALS. Both limbs are text
-      # matches, so `Err(e("... unimplemented ..."))` -- or a block comment
-      # mentioning a boundary symbol -- satisfied them without the code doing
-      # anything. A refusal must be a return, not a mention.
-      gsub(/\/\*[^*]*\*+([^\/*][^*]*\*+)*\//, " ", line)
+      # Strings first: a // or /* inside a literal is not a comment.
       gsub(/"[^"]*"/, "\"\"", line)
+
+      # Block comments, WITH CROSS-LINE STATE. The previous version used the
+      # single-line C-comment regex, which requires the closing */ on the same
+      # record -- so a MULTI-LINE /* */ survived intact into `body`, and both
+      # limbs are text matches over `body`. A fabricating fn whose comment
+      # merely mentioned Error::unimplemented or Command::new passed the gate.
+      # Reproduced: tests/fixtures/quorum/red_multiline_comment.
+      if (inblock) {
+        k = index(line, "*/")
+        if (k == 0) { line = "" } else { line = substr(line, k + 2); inblock = 0 }
+      }
+      gsub(/\/\*[^*]*\*+([^\/*][^*]*\*+)*\//, " ", line)
+      k = index(line, "/*")
+      if (k > 0) { line = substr(line, 1, k - 1); inblock = 1 }
+
+      sub(/\/\/.*$/, "", line)
       body = body " " line
       if (insig) { sig = sig " " line; if (index(line,"{")>0) insig=0 }
       else { callbody = callbody " " line }
-      n=gsub(/\{/,"{"); m=gsub(/\}/,"}"); depth += n - m
+      # Count braces on the STRIPPED line, not on $0. Two-argument gsub
+      # operates on $0 -- the raw record -- so every strip above was discarded
+      # for the purpose of extent counting, and the comment three lines up
+      # claimed the opposite. An unbalanced `{` in a comment left depth>0, and
+      # the `depth==0` guard on fn detection then never fired again: every
+      # later fn in the file silently vanished from the denominator.
+      n=gsub(/\{/,"{",line); m=gsub(/\}/,"}",line); depth += n - m
       # rr: does the SIGNATURE (not the body) promise a fallible result?
       if (depth<=0 && index(body,"{")>0) {
-        rr = (sig ~ /->[[:space:]]*(crate::)?(error::)?Result/) ? 1 : 0
+        # Any path ending in `Result`, not just three hardcoded spellings.
+        # `-> io::Result<T>` and `-> anyhow::Result<T>` promise fallible work
+        # exactly as much as `-> Result<T>`, and demoting them dropped a
+        # fabricator out of limb (c) entirely.
+        rr = (sig ~ /->[[:space:]]*([A-Za-z_][A-Za-z0-9_]*::)*Result[[:space:]]*[<(]/) ? 1 : 0
         print FILE ":" start "\t" name "\t" FILE "\t" start "\t" ispub "\t" rr "\t" body "\t" callbody "\t" qual "\t" impltype
         capturing=0
       }
@@ -297,9 +319,21 @@ for _ in $(seq 1 "$total_fns"); do
         # `::new(`, not `.new(`, so it still resolves to nothing.
         case "$callbody" in
           *"$cimpl::$cname("*) matched=1 ;;
-          *".$cname("*) matched=1 ;;
           *"Self::$cname("*) [ "$impltype" = "$cimpl" ] && matched=1 ;;
         esac
+        # `x.m(` -- a method call on a receiver. Accepted ONLY when the bare
+        # name `m` is unique in the module set. `.m(` says nothing about the
+        # receiver's type, so when two types both define `m` it is the same
+        # bare-name laundering the qualified-name fix removed, just spelled
+        # with a dot: any `.new(` would resolve to whichever `new` reaches a
+        # boundary. When the name is ambiguous, an unqualified call is not
+        # evidence and the fn must earn its verdict another way.
+        if [ "$matched" != "1" ]; then
+          case "$callbody" in *".$cname("*)
+            homonyms=$(awk -F'\t' -v n="$cname" '$2==n' "$WORK/fns.tsv" | wc -l)
+            [ "$homonyms" -eq 1 ] && matched=1 ;;
+          esac
+        fi
       else
         # A free function: a bare `f(`, or one qualified by ITS OWN module,
         # `detect::f(`. Requiring the qualifier to match the callee's file stem
@@ -341,7 +375,16 @@ while IFS=$'\t' read -r key name file start ispub rr body callbody qual impltype
   case "$name" in
     is_*available*|is_*present*|is_*supported*|is_*enabled*|is_*active*|\
     has_*|supports_*|can_*|*_available|*_present|*_supported)
-      stripped=$(printf '%s' "$body" | sed 's/[[:space:]]\+/ /g')
+      # Normalise `return true;` to a bare `true` before matching. The
+      # patterns below are textual, and `{ return true; }` matched none of
+      # them: not "{ true" (it is "{ return"), not "true }" (it is "true; }").
+      # So the 0.2.0 capability lie -- a predicate asserting a capability as a
+      # constant -- passed this gate with one keyword added. Reproduced:
+      # tests/fixtures/quorum/red_return_true.
+      stripped=$(printf '%s' "$body" \
+        | sed -e 's/[[:space:]]\+/ /g' \
+              -e 's/{ return true; }/{ true }/g' \
+              -e 's/{ return true }/{ true }/g')
       case "$stripped" in
         *"{ true }"*|*"{ true"*|*"> bool { true"*|*"true }"*) cap_lie=1 ;;
       esac

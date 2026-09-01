@@ -34,50 +34,40 @@ fn test_capabilities_never_fabricates_device_specs() {
     );
 }
 
-#[test]
-fn test_m1_baseline_is_available_when_named() {
-    // The published M1 figures remain reachable for a caller who explicitly
-    // asks for them. That is fine: the constructor's name says whose numbers
-    // these are, so nobody receives them by accident.
-    let baseline = AneCapabilities::m1_baseline();
-    assert!((baseline.tops - 15.8).abs() < f64::EPSILON);
-    assert_eq!(baseline.chip_generation, "Unknown");
-}
-
-#[test]
-fn test_m1_baseline_values() {
-    let caps = AneCapabilities::m1_baseline();
-    assert!(caps.tops > 0.0);
-    assert!(caps.max_batch_size > 0);
-    assert!(!caps.supported_ops.is_empty());
-    assert!(caps.core_count > 0);
-}
-
-/// The M1 figures must not be reachable without naming them.
+/// manzana must hand out no chip specification at all.
 ///
 /// `capabilities()` returns `Option`, so an `impl Default for AneCapabilities`
-/// makes `capabilities().unwrap_or_default()` -- an unremarkable line of Rust
-/// -- yield "15.8 TOPS, 16 cores" on any machine, including one with no Apple
-/// silicon in it. Demonstrated on x86_64 Linux before this was removed.
+/// made `capabilities().unwrap_or_default()` -- an unremarkable line of Rust
+/// -- yield "15.8 TOPS, 16 cores" on any machine, including x86_64 Linux with
+/// no Apple silicon in it. That impl was deleted and the figures moved behind
+/// a constructor called `m1_baseline()`.
 ///
-/// This test is a NAMING assertion, and that is a weak instrument: it fails if
-/// someone adds `impl Default` AND a `default()`-shaped constructor, but a
-/// bare `impl Default` would be caught by the compiler breaking this file's
-/// sibling tests, not by an assertion here. The real guard is that
-/// `AneCapabilities` has no `Default` impl to reach; this records why.
+/// Then the review pointed out that 15.8 TOPS is the M2's published figure,
+/// not the M1's. The constructor's whole justification was "the caller
+/// deliberately wants the documented M1 baseline"; with the wrong chip's
+/// number in it there was no justification left, and nothing in the crate
+/// used it. It is gone too.
+///
+/// So this asserts the end state: no measurement, and no repeated vendor
+/// specification either. There is nothing for a caller to mistake for one.
 #[test]
-fn test_no_default_hands_out_hardware_figures() {
-    let named = AneCapabilities::m1_baseline();
-    assert!(
-        (named.tops - 15.8).abs() < f64::EPSILON,
-        "the M1 figures must live behind a constructor that names them"
-    );
-    // capabilities() must still refuse; the placeholder above is not a
-    // fallback for it.
+fn test_no_chip_specification_is_reachable() {
     assert!(
         NeuralEngineSession::capabilities().is_none(),
-        "a named placeholder must not become capabilities()'s answer"
+        "capability querying is not implemented and must not guess"
     );
+
+    // AneCapabilities survives as the SHAPE a real implementation would fill
+    // in. Constructing one requires supplying every figure yourself, so any
+    // number in it is the caller's claim, not manzana's.
+    let caller_supplied = AneCapabilities {
+        tops: 0.0,
+        max_batch_size: 0,
+        supported_ops: Vec::new(),
+        chip_generation: String::from("unknown"),
+        core_count: 0,
+    };
+    assert!(caller_supplied.tops.abs() < f64::EPSILON);
 }
 
 #[test]

@@ -78,9 +78,12 @@ and each one refuses in a specific, documented way.
 | Page-aligned host allocation | `unified_memory::UmaBuffer` | `std::alloc::alloc_zeroed` at 4096-byte alignment, freed by `Drop`. Works on every platform, macOS or not |
 | Tensor construction | `Tensor::new` | Validates `data.len() == prod(shape)` with a checked multiply, so an overflowing shape is rejected rather than wrapping |
 
-Caveats on the Afterburner rows, because no host in the project's end-to-end
-matrix (`scripts/e2e_matrix.sh`: one Linux x86_64 host, one Apple M4) has the
-card:
+Caveats on the Afterburner rows. The end-to-end matrix
+(`scripts/e2e_matrix.sh`) is one Linux x86_64 host and one Apple M4, and the
+Linux host **is** a Mac Pro 7,1 with an Afterburner card physically fitted
+(`lspci`: Apple `106b:0205` at `0f:00.0`) — but it runs Linux, where there is
+no IOKit, so manzana cannot read the card there. No host in the matrix can
+both see the card and run the code that reads it:
 
 - A registry key that is absent is an error: `stats()` returns `Err`, so no
   snapshot with a stand-in value in it ever reaches you. Until 0.3.0 an absent
@@ -423,7 +426,7 @@ variants this crate actually produces:
 | `IoKit` | `AfterburnerMonitor::stats` when `IORegistryEntryCreateCFProperties` returns a non-`KERN_SUCCESS` code or a null dictionary. The `kern_return_t` is preserved and readable via `Error::error_code()` |
 | `Internal` | `UmaBuffer::new` when the layout is rejected or the allocator returns null |
 
-`Error::Metal`, `Error::CoreMl`, `Error::Security`, `Error::Timeout`, and
+`Error::Metal`, `Error::CoreMl`, `Error::Timeout`, and
 `Error::PermissionDenied` exist with public constructors, but nothing in `src/`
 constructs them. Do not write a match arm expecting one.
 
@@ -473,10 +476,10 @@ the buffer initialized before any reference to it can exist.
 
 | Metric | Value |
 |---|---|
-| Tests | 214 on Linux, 221 on macOS arm64, plus 62 doctests on each. 0 ignored on both |
-| Line coverage | 96.16%, against a 95% floor enforced by `make coverage-gate` |
+| Tests | 211 on Linux, 218 on macOS arm64, 0 ignored on both. Those totals are what `cargo test -- --list` reports, which **includes** the 61 doctests — 150 harness tests + 61 doctests on Linux. An earlier row said "214 ... plus 62 doctests" and double-counted them |
+| Line coverage | 96.13%, against a 95% floor enforced by `make coverage-gate` |
 | Clippy | 0 warnings with `pedantic` + `nursery` on `--all-targets --all-features` |
-| Unsafe code | `src/ffi/iokit.rs`, `src/unified_memory/mod.rs` |
+| Unsafe code | `src/ffi/iokit.rs`, `src/ffi/mod.rs`, `src/unified_memory/mod.rs`, `src/unified_memory/buffer.rs`. This row listed two of the four; the allocator's `alloc_zeroed`/`dealloc` pair lives in `buffer.rs` and an auditor sent to `mod.rs` would not find it |
 
 The counts differ by platform because some tests are gated on `target_os`.
 That gap is what `scripts/check_test_census.sh` exists to police, and it is not

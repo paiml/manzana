@@ -74,6 +74,25 @@ GATE="scripts/check_hardware_reachability.sh"
   [[ "$output" == *"fabricates_with_symbol_in_a_block_comment"* ]]
 }
 
+@test "MZNQ-4: a multi-line block comment satisfies neither limb" {
+  # The stripper used the single-line C-comment regex, so a /* */ spanning two
+  # lines survived into the body both limbs text-match against. A fabricating
+  # fn that merely MENTIONED Error::unimplemented or Command::new passed.
+  run env FIXTURE_DIR=tests/fixtures/quorum/red_multiline_comment bash "$GATE"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"read_die_temperature"* ]]
+  [[ "$output" == *"read_gpu_core_count"* ]]
+}
+
+@test "MZNQ-4: a return-true capability lie is caught like a bare true" {
+  # The capability patterns are textual and matched "{ true }" but not
+  # "{ return true; }" -- the advisory's headline defect with one keyword added.
+  run env FIXTURE_DIR=tests/fixtures/quorum/red_return_true bash "$GATE"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"is_smc_available"* ]]
+  [[ "$output" == *"without probing anything"* ]]
+}
+
 @test "backtest: the corrected gate catches 0.2.0 sign, verify, delete AND is_available" {
   # The name-keyed gate reported 11 violations on the published 0.2.0 but
   # marked every is_available "reaches-boundary", missing the headline

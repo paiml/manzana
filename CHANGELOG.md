@@ -73,9 +73,16 @@ The same pattern existed outside the module named in the advisory:
   history. Same for `is_active()`'s note about defaulted snapshots.
 - **A vacuous test.** `metal::tests::test_detect_gpu_vram` wrapped its whole
   body in `if !devices.is_empty()`, so replacing `MetalCompute::devices()` with
-  `Vec::new()` left it passing green having asserted nothing. Guard removed;
-  it now asserts enumeration succeeded, which its unguarded sibling
-  `test_detect_real_gpus` already required.
+  `Vec::new()` left it passing green having asserted nothing.
+
+  Removing the guard exposed a second defect rather than fixing the first: the
+  replacement asserted "at least one Metal device on macOS", which is a
+  hardware assumption wearing a platform assumption's clothes, and it failed on
+  GitHub's headless macos-latest runner. It now asks `system_profiler` what
+  this host actually reported and asserts agreement — falsifiable both on a
+  machine with a GPU (fails against an empty list) and on one without (fails
+  against a fabricated fallback device). Three sibling tests and one in
+  `tests/integration_tests.rs` had the same defect and got the same treatment.
 - **Unit labels.** `17_179_869_184` is 16 GiB, not 16 GB, and was documented as
   "GB" in five places while `vram_gb()` divides by 2^30. `system_profiler`
   prints "GB" meaning GiB, and the crate now says so where it parses it.
