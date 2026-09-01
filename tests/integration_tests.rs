@@ -199,20 +199,50 @@ fn test_f017_graceful_degradation_on_missing_hardware() {
 // Metal API tests (F046-F060)
 // =============================================================================
 
-// F046: All Metal devices enumerated
+// F046: enumeration agrees with what `system_profiler` reported on THIS host.
+//
+// This asserted "at least one Metal device on macOS", which is a HARDWARE
+// assumption wearing a PLATFORM assumption's clothes. GitHub's macos-latest
+// runner is a headless VM with no enumerable display GPU, and the assertion
+// failed there -- while the same test passes on the M4 in the e2e matrix.
+// "Runs macOS" and "has a GPU" are different claims, which is the same
+// presence-versus-reachability distinction this release is about.
+//
+// Three sibling tests in src/metal/tests.rs had the identical defect and were
+// fixed first; this one lives in tests/, which is EXCLUDED from the published
+// package, so the artifact review lanes could not see it. Only CI could.
+//
+// Falsifiable on both kinds of host: on a machine with a GPU it fails against
+// an empty list, and on a headless one it fails against the fabricated
+// fallback device this release removed.
 #[test]
 fn test_f046_metal_device_enumeration() {
     let devices = MetalCompute::devices();
-    #[cfg(target_os = "macos")]
-    assert!(
-        !devices.is_empty(),
-        "Should find at least one Metal device on macOS"
-    );
+
     #[cfg(not(target_os = "macos"))]
     assert!(
         devices.is_empty(),
         "Should find no Metal devices on non-macOS"
     );
+
+    #[cfg(target_os = "macos")]
+    {
+        let reported = std::process::Command::new("system_profiler")
+            .args(["SPDisplaysDataType"])
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .is_some_and(|o| String::from_utf8_lossy(&o.stdout).contains("Chipset Model:"));
+
+        assert_eq!(
+            !devices.is_empty(),
+            reported,
+            "devices() disagrees with system_profiler: it named {} GPU(s), \
+             devices() returned {}",
+            if reported { "at least one" } else { "no" },
+            devices.len()
+        );
+    }
 }
 
 // F047: Device properties accurate
