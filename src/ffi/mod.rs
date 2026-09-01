@@ -44,23 +44,28 @@ pub mod iokit;
 #[cfg(target_os = "macos")]
 pub mod security;
 
-// Stub modules for non-macOS platforms
+// Non-macOS implementations. These are not stubs in the fabricating sense:
+// they report unavailability rather than inventing a result.
 #[cfg(not(target_os = "macos"))]
 pub mod iokit {
-    //! Stub IOKit module for non-macOS platforms.
+    //! IOKit surface for platforms that have no IOKit.
+    //!
+    //! Every entry point reports absence. Nothing here manufactures a value.
 
     use crate::error::{Error, Subsystem};
 
-    /// Stub: Always returns None on non-macOS.
+    /// Always `None`: there is no IOKit on this platform.
     pub const fn find_afterburner_service() -> Option<AfterburnerService> {
         None
     }
 
-    /// Stub service type.
+    /// Placeholder-free service handle: it can never be constructed here,
+    /// because `find_afterburner_service` always returns `None`.
     pub struct AfterburnerService;
 
     impl AfterburnerService {
-        /// Stub: Returns error on non-macOS.
+        /// Always `Err(NotAvailable)`: unreachable, since no value of this
+        /// type can be obtained on a non-macOS target.
         #[allow(clippy::unused_self)]
         pub const fn get_stats(&self) -> Result<AfterburnerRawStats, Error> {
             Err(Error::not_available(Subsystem::Afterburner))

@@ -58,6 +58,12 @@ coverage-check:
 	cargo llvm-cov --lib --fail-under 90
 
 quorum:
+	@echo "🧾 SATD euphemism detection (MZNQ-005)..."
+	@# `--extended` detects the euphemisms plain SATD misses: stub, placeholder,
+	@# "for now". Default mode scored the fabricating 0.2.0 build at ZERO debt
+	@# over comments reading "generates a fake public key". The detector already
+	@# existed; this repo had simply never enabled it.
+	pmat analyze satd --extended --fail-on-violation
 	@echo "🔍 Hardware-reachability gate (MZNQ-4)..."
 	./scripts/check_hardware_reachability.sh
 	@echo "🧬 Gate mutation set (MZNQ-003, target 100%)..."

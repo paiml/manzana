@@ -76,6 +76,22 @@ GATE="scripts/check_hardware_reachability.sh"
   [[ "$output" == *"100% kill"* ]]
 }
 
+@test "MZNQ-005: extended SATD is clean on the current crate" {
+  run pmat analyze satd --extended --fail-on-violation
+  [ "$status" -eq 0 ]
+}
+
+@test "MZNQ-005 discrimination: extended SATD flags the 0.2.0 euphemisms" {
+  # Default SATD scored this file at ZERO debt while it contained
+  # "// Stub implementation - generates a fake public key".
+  d="$(mktemp -d)"; mkdir -p "$d/src"
+  cp tests/fixtures/quorum/satd_euphemism/secure_enclave_0_2_0.rs.fixture "$d/src/secure_enclave.rs"
+  printf '[package]\nname = "satdfix"\nversion = "0.1.0"\nedition = "2021"\n' > "$d/Cargo.toml"
+  run bash -c "cd '$d' && pmat analyze satd --extended 2>&1"
+  rm -rf -- "$d"
+  [[ "$output" == *"Found 9 SATD violations"* ]]
+}
+
 @test "gate emits a machine-readable receipt" {
   out="$(mktemp)"
   run env JSON_OUT="$out" bash "$GATE"
