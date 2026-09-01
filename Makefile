@@ -31,7 +31,7 @@ test-unit:
 # =============================================================================
 # TIER 2: ON-COMMIT (1-5 minutes)
 # =============================================================================
-tier2: fmt-check lint test coverage-check audit deny
+tier2: fmt-check lint test coverage-check coverage-gate audit deny quorum
 	@echo "✅ Tier 2 passed (on-commit validation)"
 
 fmt-check:
@@ -52,10 +52,73 @@ test:
 	@echo "🧪 Running all tests..."
 	cargo test --all-targets
 
+COVERAGE_FLOOR ?= 95.0
+
+coverage-gate:
+	@echo "📊 Coverage floor ($(COVERAGE_FLOOR)% lines)..."
+	@# The floor is passed into awk, so the printed message cannot drift from
+	@# the comparison. A gate whose message and check disagree is how a false
+	@# claim survives review.
+	@cargo llvm-cov --all-features --summary-only 2>/dev/null | \
+		awk -v floor=$(COVERAGE_FLOOR) '/^TOTAL/ { \
+			seen=1; pct=$$10; gsub(/%/,"",pct); \
+			printf "   lines: %s%% (floor %s%%)\n", pct, floor; \
+			if (pct+0 < floor+0) { \
+				printf "\033[0;31m   FAIL: %s%% is below the %s%% floor\033[0m\n", pct, floor; \
+				exit 1 \
+			} \
+			printf "\033[0;32m   PASS\033[0m\n" \
+		} END { if (!seen) { \
+			printf "\033[0;31m   FAIL: no TOTAL row parsed -- coverage was not measured\033[0m\n"; \
+			exit 1 } }'
+
+e2e:
+	@echo "🔌 End-to-end matrix (real hardware)..."
+	./scripts/e2e_matrix.sh
+
 coverage-check:
 	@echo "📊 Checking coverage (target: 95%)..."
 	@command -v cargo-llvm-cov >/dev/null 2>&1 || { echo "Installing cargo-llvm-cov..."; cargo install cargo-llvm-cov; }
 	cargo llvm-cov --lib --fail-under 90
+
+quorum:
+	@echo "📜 Provable contracts (pv)..."
+	@# Per-file `pv validate`, never `pv lint <FILE>`: lint passes vacuously
+	@# over zero contracts, so a typo'd path would read as success.
+	@for c in contracts/*.yaml; do \
+		echo "   validate $$c"; pv validate "$$c" >/dev/null || exit 1; \
+		echo "   audit    $$c"; pv audit "$$c" >/dev/null || exit 1; \
+	done
+	@# Score against the binding registry. Without --binding, Bind scores 0.00
+	@# and the registry is never consulted -- a silent 0 that looks like a
+	@# measurement. The registry lives outside this repo, so it is optional
+	@# here but reported when present.
+	@if [ -f ../provable-contracts/contracts/manzana/binding.yaml ]; then \
+		pv score contracts/ --binding ../provable-contracts/contracts/manzana/binding.yaml > .pv-score.txt \
+			|| { echo "pv score failed"; rm -f .pv-score.txt; exit 1; }; \
+		tail -6 .pv-score.txt; rm -f .pv-score.txt; \
+	else \
+		echo "   NOTE: binding registry absent; Bind score not measured"; \
+	fi
+	@echo "   binding liveness (contract attrs are bound, not decorative)"
+	cargo test --all-features contract_binding -- --exact contract_binding::test_contract_binding_is_live
+	@echo "🧾 SATD euphemism detection (MZNQ-005)..."
+	@# `--extended` detects the euphemisms plain SATD misses: stub, placeholder,
+	@# "for now". Default mode scored the fabricating 0.2.0 build at ZERO debt
+	@# over comments reading "generates a fake public key". The detector already
+	@# existed; this repo had simply never enabled it.
+	pmat analyze satd --extended --fail-on-violation
+	@echo "🔍 Hardware-reachability gate (MZNQ-4)..."
+	./scripts/check_hardware_reachability.sh
+	@echo "🧬 Gate mutation set (MZNQ-003, target 100%)..."
+	./scripts/mutate_reachability_gate.sh
+	@if command -v bats >/dev/null 2>&1; then \
+		echo "🧪 Quorum fixtures..."; bats tests/quorum.bats tests/quorum_satd.bats; \
+	else \
+		echo "❌ bats not installed; the fixture suite cannot be reported as passing."; \
+		echo "   Install: https://github.com/bats-core/bats-core"; \
+		exit 1; \
+	fi
 
 audit:
 	@echo "🔒 Running security audit..."
@@ -65,12 +128,12 @@ audit:
 deny:
 	@echo "📋 Checking dependencies..."
 	@command -v cargo-deny >/dev/null 2>&1 || { echo "Installing cargo-deny..."; cargo install cargo-deny; }
-	cargo deny check 2>/dev/null || echo "⚠️  cargo-deny not configured (create deny.toml)"
+	cargo deny check
 
 # =============================================================================
 # TIER 3: ON-MERGE (Hours - exhaustive QA)
 # =============================================================================
-tier3: tier2 mutation miri bench doc
+tier3: tier2 mutation miri bench doc e2e
 	@echo "✅ Tier 3 passed (on-merge exhaustive QA)"
 
 mutation:
@@ -80,7 +143,12 @@ mutation:
 
 miri:
 	@echo "🔬 Running MIRI (undefined behavior check)..."
-	@rustup run nightly cargo miri test --lib 2>/dev/null || echo "⚠️  MIRI requires nightly: rustup +nightly component add miri"
+	@rustup run nightly cargo miri --version >/dev/null 2>&1 || { \
+		echo "❌ MIRI is not installed. Install it with:"; \
+		echo "     rustup +nightly component add miri"; \
+		echo "   This target must not be reported as passing without it."; \
+		exit 1; }
+	rustup run nightly cargo miri test --lib
 
 bench:
 	@echo "⏱️  Running benchmarks..."

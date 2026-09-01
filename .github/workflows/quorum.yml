@@ -1,0 +1,250 @@
+# MZNQ-008 -- the anti-fabrication gates, enforced in CI.
+#
+# A gate that lives only in a Makefile is skipped by not typing `make`. The
+# gates below are what stop the 2026-04-07 defect class recurring, so they run
+# on every pull request.
+#
+# DESIGN NOTES, each one a failure mode this repository has already met:
+#
+#  * NO workflow-level `paths:` filter. A path-filtered required check never
+#    reports on a PR that does not touch those paths, and branch protection
+#    then waits forever for a check that will never arrive. Filtering, where it
+#    is wanted at all, belongs on a job-level `if:`.
+#
+#  * NO `continue-on-error` on any gate step. The crate's own `make miri` ended
+#    in `2>/dev/null || echo` and could not fail; that is precisely how the
+#    "MIRI-verified" claim survived. A gate that cannot fail is worth nothing.
+#
+#  * A MISSING TOOL IS A FAILURE **in the `gates` job**: bats is installed and
+#    its absence exits non-zero, because those gates are the ones that must
+#    never be skipped.
+#
+#    The `contracts` job is DIFFERENT and this is stated rather than glossed:
+#    pv and pmat are not installable on public runners, so those steps are
+#    `if:`-guarded and the job can go green having run only the build.rs
+#    binding check. An earlier version of this header claimed a missing tool
+#    always fails -- that was false of the contracts job, i.e. a false claim
+#    in the workflow enforcing a rule against false claims. The job emits a
+#    ::warning:: naming exactly which checks did NOT run, and the summary must
+#    repeat it: an unrun check is not evidence.
+#
+#  * The matrix runs Linux AND macOS. 26 of 163 tests were once
+#    `#[cfg(target_os = "macos")]`-gated, so on Linux they did not exist and
+#    `0 ignored` read as a pass. One platform cannot establish this crate.
+
+name: Quorum
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: quorum-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # -------------------------------------------------------------------------
+  # Tests on both platforms. The point is the matrix, not either half of it.
+  # -------------------------------------------------------------------------
+  matrix-test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Test
+        run: cargo test --all-features --verbose
+
+      - name: Doc tests
+        run: cargo test --doc --all-features
+
+      # A run reporting zero tests is the empty-denominator defect. Assert the
+      # harness actually executed something rather than trusting exit code 0.
+      - name: Refuse an empty test run
+        shell: bash
+        run: |
+          set -euo pipefail
+          n=$(cargo test --all-features -- --list 2>/dev/null | grep -c ': test$' || true)
+          echo "harness lists $n test(s)"
+          if [ "$n" -lt 50 ]; then
+            echo "::error::only $n tests listed; an empty or truncated run must not read as a pass"
+            exit 1
+          fi
+
+  # -------------------------------------------------------------------------
+  # The anti-fabrication gates. Linux only: they are deterministic and
+  # platform-independent by design.
+  # -------------------------------------------------------------------------
+  gates:
+    name: Anti-fabrication gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install gate tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo install --locked cargo-llvm-cov || true
+          rustup component add llvm-tools-preview || true
+          sudo apt-get update -qq && sudo apt-get install -y -qq bats
+          # A missing tool must fail the job, not silently reduce its scope.
+          for t in bats; do
+            command -v "$t" >/dev/null 2>&1 || { echo "::error::$t missing; gates cannot run"; exit 1; }
+          done
+
+      # MZNQ-4. Every pub fn in a charter-declared hardware module must reach an
+      # allowlisted boundary or return Err(Unimplemented). No third option.
+      - name: Hardware reachability (MZNQ-4)
+        run: ./scripts/check_hardware_reachability.sh
+
+      # MZNQ-003. The gate above is what every reachability verdict rests on,
+      # so it must be demonstrably able to fail. 100% kill, no ratchet.
+      - name: Gate mutation set (MZNQ-003)
+        run: ./scripts/mutate_reachability_gate.sh
+
+      # G3. ignored == 0, no module with an empty denominator, ratchet on the
+      # total, and a NAME-SET diff -- which a count cannot do, since deleting
+      # one test and adding another leaves the total unchanged.
+      - name: Test census (G3)
+        run: ./scripts/check_test_census.sh
+
+      # quorum.bats only -- quorum_satd.bats needs pmat, which is not
+      # installable here, and it runs in the `contracts` job under the same
+      # guard as the other pmat checks. Leaving it in this job made the entire
+      # anti-fabrication gate fail with exit 127 for a missing tool that has
+      # nothing to do with the gates it protects.
+      - name: Quorum fixtures
+        run: bats tests/quorum.bats
+
+      - name: Coverage floor
+        run: make coverage-gate
+
+      - name: Dependency advisories
+        run: |
+          cargo install --locked cargo-deny || true
+          cargo deny check advisories
+
+  # -------------------------------------------------------------------------
+  # pmat / pv checks. Split out because their tooling is not on public runners;
+  # the job states that plainly instead of passing over a check it never ran.
+  # -------------------------------------------------------------------------
+  contracts:
+    name: Contracts and SATD
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Resolve tooling
+        id: tools
+        shell: bash
+        run: |
+          set -uo pipefail
+          have_pv=no; have_pmat=no
+          command -v pv   >/dev/null 2>&1 && have_pv=yes
+          command -v pmat >/dev/null 2>&1 && have_pmat=yes
+          echo "pv=$have_pv"     >> "$GITHUB_OUTPUT"
+          echo "pmat=$have_pmat" >> "$GITHUB_OUTPUT"
+          echo "pv=$have_pv pmat=$have_pmat"
+
+      # build.rs already fails the build when a #[contract] attribute names a
+      # missing contract or an undeclared equation, so this runs everywhere and
+      # does not depend on pv being installed.
+      - name: Contract bindings resolve (build.rs)
+        run: cargo test --all-features contract_binding
+
+      - name: pv validate + audit
+        if: steps.tools.outputs.pv == 'yes'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Per-file `validate`, never `pv lint <FILE>` -- lint passes
+          # vacuously over zero contracts, so a wrong path reads as success.
+          shopt -s nullglob
+          files=(contracts/*.yaml)
+          [ ${#files[@]} -gt 0 ] || { echo "::error::no contracts found; a gate over zero files is not a pass"; exit 1; }
+          for c in "${files[@]}"; do
+            echo "validate $c"; pv validate "$c"
+            echo "audit    $c"; pv audit "$c"
+          done
+
+      # `--extended` detects the euphemisms default SATD misses. Default mode
+      # scored the fabricating 0.2.0 build at ZERO debt over comments reading
+      # "generates a fake public key".
+      - name: SATD euphemism detection (MZNQ-005)
+        if: steps.tools.outputs.pmat == 'yes'
+        run: pmat analyze satd --extended --fail-on-violation
+
+      # The pmat half of the quorum fixture suite. Same guard, same warning.
+      - name: Quorum SATD fixtures
+        if: steps.tools.outputs.pmat == 'yes'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq bats
+          bats tests/quorum_satd.bats
+
+      - name: Report unrun checks
+        if: steps.tools.outputs.pv != 'yes' || steps.tools.outputs.pmat != 'yes'
+        run: |
+          echo "::warning::pv=${{ steps.tools.outputs.pv }} pmat=${{ steps.tools.outputs.pmat }} -- so the pv contract validation, the extended-SATD check (MZNQ-005) and tests/quorum_satd.bats did NOT run on this runner. An unrun check is not evidence."
+
+  # -------------------------------------------------------------------------
+  # Aggregator.
+  #
+  # This job's name is `gate` ON PURPOSE, and the name is load-bearing.
+  #
+  # `main` is protected by the ruleset "Green Main — unified gate enforcement"
+  # (active), whose one required status check context is `gate`. NOTHING was
+  # producing that name: the sovereign-ci reusable workflow reports as
+  # `ci / gate` (GitHub prefixes a called workflow's jobs with the calling
+  # job), and this aggregator used to report as `quorum / gate`. A required
+  # context that no check ever produces blocks every pull request forever --
+  # PR #4 sat BLOCKED with twelve green checks -- and it also means `main` was
+  # never actually protected by anything, because the rule could not be
+  # evaluated.
+  #
+  # That is the same defect as a gate that cannot fail, one level up: a rule
+  # that reports nothing enforces nothing. An earlier revision of this comment
+  # asserted the context was "supplied by the sovereign-ci reusable workflow",
+  # which was simply untrue and went unchecked because nobody tried to merge.
+  #
+  # Naming this job `gate` satisfies the existing ruleset from inside the
+  # repository, with no settings change and no protection bypass. What now
+  # enforces `main` is this job's `needs`: tests on BOTH platforms, the
+  # anti-fabrication gates, and the contract checks.
+  # -------------------------------------------------------------------------
+  quorum-gate:
+    name: gate
+    runs-on: ubuntu-latest
+    needs: [matrix-test, gates, contracts]
+    if: always()
+    steps:
+      - name: Aggregate
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "matrix-test: ${{ needs.matrix-test.result }}"
+          echo "gates:       ${{ needs.gates.result }}"
+          echo "contracts:   ${{ needs.contracts.result }}"
+          # `skipped` is NOT a pass. A check that did not run is not a check
+          # that succeeded -- that conflation is the whole incident.
+          for r in "${{ needs.matrix-test.result }}" "${{ needs.gates.result }}" "${{ needs.contracts.result }}"; do
+            if [ "$r" != "success" ]; then
+              echo "::error::a required job did not succeed (got '$r')"
+              exit 1
+            fi
+          done
+          echo "all quorum jobs succeeded"

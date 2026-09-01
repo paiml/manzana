@@ -1,0 +1,143 @@
+# manzana charter — what this crate is for, machine-readable.
+#
+# Non-goals say what manzana does not claim. They cannot decide the fate of a
+# module. This can. See docs/specifications/security-architecture-plan.md §5.0.
+#
+# CHARTER
+#   manzana exposes Apple hardware capabilities to Rust where no maintained
+#   Rust crate already does. Where one exists, manzana documents it and ships
+#   nothing.
+#
+# This file is the DENOMINATOR for the hardware-reachability gate (MZNQ-4).
+# A module absent from [hardware_modules] is invisible to that gate, which is
+# exactly the missing-denominator defect (F8) the gate exists to prevent. The
+# charter-mapping check asserts every public module appears in exactly one of
+# the tables below.
+
+[charter]
+version = 1
+statement = "Expose Apple hardware to Rust where no maintained Rust crate does; where one exists, document it and ship nothing."
+spec = "docs/specifications/security-architecture-plan.md"
+
+# Modules that claim to touch Apple hardware. Every `pub fn` in these files is
+# subject to the reachability rule: reach an allowlisted external boundary, or
+# return Err(Error::Unimplemented). There is no third option, which is what
+# makes a fabricated return value unrepresentable rather than merely tested-for.
+[hardware_modules]
+paths = [
+    "src/neural_engine/mod.rs",
+    "src/metal/mod.rs",
+    "src/unified_memory/mod.rs",
+    "src/afterburner/mod.rs",
+    "src/ffi/iokit.rs",
+    # Shells out to system_profiler -- a real external boundary.
+    "src/metal/detect.rs",
+    # Owns the alloc_zeroed/dealloc pair.
+    "src/unified_memory/buffer.rs",
+]
+
+# Boundaries that count as "reaching real hardware". A call resolving into one
+# of these satisfies limb (a) of the rule.
+[hardware_modules.allowlist]
+crates = ["security_framework", "objc2", "core_foundation", "core_foundation_sys", "mach2"]
+# Raw FFI markers, matched as source constructs rather than call targets.
+constructs = ['extern "C"', "#[link", "IOServiceMatching", "IOServiceGetMatchingService", "IORegistryEntry"]
+# Real host syscalls / process boundaries that genuinely leave the crate.
+host_calls = ["std::process::Command", "Command::new", "std::alloc::alloc_zeroed", "alloc_zeroed", "dealloc"]
+
+# Capability predicates whose COMPILE-TIME derivation is sound.
+#
+# The reachability gate flags a capability-shaped predicate returning a bare
+# `true` as `capability-without-probe`. That rule is right, and it caught the
+# 0.2.0 defect: secure_enclave::is_available() returned true on x86_64 macOS,
+# where there may be no Secure Enclave at all. The claim was FALSE.
+#
+# A compile-time claim can also be TRUE, and this is the auditable list of
+# those -- an explicit, justified, reviewable exception rather than a silent
+# pass. Adding a row here is a claim someone must defend.
+[capability_predicates]
+compile_time_sound = [
+    # Every Apple Silicon part ships a Neural Engine, so `target_arch =
+    # "aarch64" && target_os = "macos"` entails ANE presence for a natively
+    # built binary. Contrast the 0.2.0 defect, whose x86_64-macOS branch
+    # entailed nothing. Note this reports PRESENCE; inference is unimplemented,
+    # and lib.rs::is_acceleration_usable answers the usability question.
+    "src/neural_engine/mod.rs:is_available",
+]
+
+# Operations on memory the type ALREADY OWNS.
+#
+# These take `self` and only transform an allocation the type obtained
+# legitimately (UmaBuffer::new reaches alloc_zeroed). They return Result and
+# reach no boundary of their own, so the reachability rule would call them
+# fabricating -- but they claim nothing from hardware.
+#
+# An EXPLICIT LIST, deliberately, not a structural rule. A structural version
+# ("any self-method in a file where anything reaches a boundary") was tried and
+# cleared 0.2.0's sign(), verify() and delete() -- the exact defects the gate
+# exists to catch. Each row here is a claim someone must defend.
+[owned_state_ops]
+functions = [
+    # Writes into an allocation UmaBuffer::new obtained via alloc_zeroed.
+    "src/unified_memory/buffer.rs:copy_from_slice",
+    # A pure value constructor: validates `data.len() == prod(shape)` and
+    # builds a Tensor from its arguments alone. It claims no hardware, and it
+    # is contract-bound under manzana-tensor-v1 with three falsification tests
+    # that were each verified to go RED against the pre-fix implementation.
+    "src/neural_engine/mod.rs:new",
+]
+
+# The refusal that satisfies limb (b).
+[hardware_modules.refusal]
+symbols = ["Error::unimplemented", "unimplemented"]
+error_variant = "Unimplemented"
+
+# Non-hardware modules. Not subject to the reachability rule, but still subject
+# to the charter-mapping check, so nothing is silently unclassified.
+[support_modules]
+paths = [
+    "src/lib.rs",
+    "src/error/mod.rs",
+    "src/ffi/mod.rs",
+    # Pure value types, split out of their modules because documenting what
+    # they are NOT takes more room than the types themselves.
+    "src/metal/types.rs",
+    "src/afterburner/stats.rs",
+    "src/error/subsystem.rs",
+    # Test-only module (`#[cfg(test)] mod parse_tests;`), split out of
+    # src/metal/tests.rs to keep both files inside the 500-line health limit.
+    # Listed here so the charter-mapping check stays exhaustive: an unmapped
+    # module is invisible to the reachability gate, and that silent hole is the
+    # missing-denominator defect the mapping check exists to stop. The gate
+    # correctly flagged this file the moment it was created.
+    "src/metal/parse_tests.rs",
+]
+
+# Surfaces judged OUT of charter — a maintained Rust crate already covers them.
+# Presence here is a deletion commitment with a target version, not a wishlist.
+# secure_enclave was DELETED in 0.3.0 rather than deferred to 0.4.0.
+#
+# The deferral rationale -- "a live disclosure must not be churned" -- did not
+# survive scrutiny: nothing had been published, so there was no live release to
+# churn. Wrapping security-framework (349M downloads) added zero capability and
+# imported 100% of the RUSTSEC-2026-0273 advisory surface.
+#
+# Deleting drove the cryptographic attack surface to zero and made "never build
+# cryptography" un-violable by construction rather than by policy. It also
+# removed, at no cost, a hand-rolled DER parser, a PublicKey type that accepted
+# points not on the P-256 curve, and a test-only constructor that existed
+# solely to make unreachable methods reachable.
+[removed]
+modules = ["src/secure_enclave/", "src/ffi/security.rs"]
+version = "0.3.0"
+use_instead = "security-framework"
+crypto_surface_lines_removed = 798
+
+# Known naming defect: the type claims a capability it does not have. Tracked
+# here so it is not lost — stale self-description in a type name is still F10.
+[[known_misnomers]]
+symbol = "UmaBuffer"
+file = "src/unified_memory/mod.rs"
+claims = "unified CPU/GPU memory"
+actually = "page-aligned host allocation; not an MTLBuffer, not GPU-visible"
+target_version = "0.4.0"

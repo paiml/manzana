@@ -1,123 +1,141 @@
-//! Metal GPU Compute Example
+//! Metal GPU example: what manzana can and cannot do with a Metal device.
 //!
-//! Demonstrates Metal GPU device enumeration and compute setup.
+//! Enumerates the GPUs `system_profiler` reports, labels which printed fields
+//! were read from that report and which were not, then calls the compute
+//! entry points so their refusals are visible rather than merely described.
 //!
-//! Run with: cargo run --example `metal_compute`
+//! Run with `cargo run --example metal_compute`. On a host with no Metal
+//! device — any non-macOS machine — it says so and exits.
 
 use manzana::metal::MetalCompute;
 
-fn main() -> Result<(), manzana::Error> {
+const TOP: &str = "┌─────────────────────────────────────────────────────────────┐";
+const MID: &str = "├─────────────────────────────────────────────────────────────┤";
+const BOT: &str = "└─────────────────────────────────────────────────────────────┘";
+
+/// Width available for text inside a panel.
+const ROW: usize = 59;
+
+fn main() {
     println!("╔════════════════════════════════════════════════════════════╗");
     println!("║          MANZANA - Metal GPU Compute Demo                  ║");
     println!("╚════════════════════════════════════════════════════════════╝");
     println!();
 
-    // Check availability
-    if !MetalCompute::is_available() {
-        println!("❌ Metal not available on this system.");
-        println!("   Requires: macOS with Metal-capable GPU");
-        return Ok(());
+    let devices = MetalCompute::devices();
+    if devices.is_empty() {
+        println!("Metal not available on this system.");
+        println!("Enumeration runs `system_profiler SPDisplaysDataType`, which");
+        println!("reported no GPU here. Requires macOS with a Metal-capable GPU.");
+        return;
     }
 
-    // Enumerate all Metal devices
-    let devices = MetalCompute::devices();
     println!("Found {} Metal device(s):", devices.len());
     println!();
 
-    for (i, device) in devices.iter().enumerate() {
-        println!("┌─────────────────────────────────────────────────────────────┐");
-        println!("│ GPU {}: {:<52} │", i, &device.name);
-        println!("├─────────────────────────────────────────────────────────────┤");
-        println!("│ Registry ID: {:<46} │", device.registry_id);
-        println!(
-            "│ VRAM: {:>6.1} GB                                            │",
-            device.vram_gb()
-        );
-        println!(
-            "│ Max Threads/Group: {:>6}                                   │",
+    for device in &devices {
+        println!("{TOP}");
+        row(&format!("GPU {}: {}", device.index, device.name));
+        println!("{MID}");
+        row("Read from system_profiler:");
+        row(&format!("  Name:  {}", device.name));
+        // VRAM belongs on the measured side ONLY when the report carried a
+        // VRAM line. On Apple Silicon it never does, so this panel used to
+        // file a crate constant under "Read from system_profiler".
+        if device.reported_vram_bytes.is_some() {
+            // Some(x) implies max_buffer_length == x, so vram_gb() is that
+            // figure and no second conversion is needed.
+            row(&format!("  VRAM:  {:.1} GiB", device.vram_gb()));
+        } else {
+            row("  VRAM:  not reported for this device");
+        }
+        row("");
+        row("Not queried from the device - synthesized or derived:");
+        if device.reported_vram_bytes.is_none() {
+            row(&format!(
+                "  VRAM:               {:.1} GiB (manzana default, not read)",
+                device.vram_gb()
+            ));
+        }
+        row(&format!(
+            "  Registry ID:        {} (enumeration index + 1)",
+            device.registry_id
+        ));
+        row(&format!(
+            "  Max threads/group:  {} (hardcoded literal)",
             device.max_threads_per_threadgroup
-        );
-        println!(
-            "│ Low Power: {:<5}  Headless: {:<5}  UMA: {:<5}              │",
-            if device.is_low_power { "Yes" } else { "No" },
-            if device.is_headless { "Yes" } else { "No" },
-            if device.has_unified_memory {
-                "Yes"
-            } else {
-                "No"
-            }
-        );
-        println!(
-            "│ Apple Silicon: {:<5}                                        │",
-            if device.is_apple_silicon() {
-                "Yes"
-            } else {
-                "No"
-            }
-        );
-        println!("└─────────────────────────────────────────────────────────────┘");
+        ));
+        row(&format!(
+            "  Headless:           {} (never determined)",
+            device.is_headless
+        ));
+        row(&format!(
+            "  Low power:          {} (from the name string)",
+            device.is_low_power
+        ));
+        row(&format!(
+            "  Unified memory:     {} (from the name / build target)",
+            device.has_unified_memory
+        ));
+        println!("{BOT}");
         println!();
     }
 
-    // Create compute pipeline on default device
-    println!("Creating compute pipeline on default device...");
-    let compute = MetalCompute::default_device()?;
-    println!("✓ Pipeline created on: {}", compute.device_name());
-    println!();
+    compute_pipeline();
+}
 
-    // Compile a simple shader
-    println!("Compiling shader...");
-    let shader_source = r"
-        kernel void vector_add(
-            device float* a [[buffer(0)]],
-            device float* b [[buffer(1)]],
-            device float* result [[buffer(2)]],
-            uint id [[thread_position_in_grid]]
-        ) {
-            result[id] = a[id] + b[id];
+/// Call each compute entry point and print exactly what it returns.
+///
+/// The refusals are printed rather than propagated with `?`, so that one
+/// failure does not hide the ones after it.
+fn compute_pipeline() {
+    println!("Compute pipeline:");
+
+    let compute = match MetalCompute::default_device() {
+        Ok(compute) => compute,
+        Err(e) => {
+            println!("  default_device  -> {e}");
+            return;
         }
-    ";
+    };
+    println!("  default_device  -> {}", compute.device_name());
 
-    let shader = compute.compile_shader(shader_source, "vector_add")?;
-    println!("✓ Shader compiled: {}", shader.name());
+    match compute.compile_shader("kernel void vector_add() {}", "vector_add") {
+        Ok(shader) => println!(
+            "  compile_shader  -> unexpectedly compiled {}; verify the backend",
+            shader.name()
+        ),
+        Err(e) => println!("  compile_shader  -> {e}"),
+    }
+
+    match compute.allocate_buffer(1024) {
+        Ok(buffer) => println!(
+            "  allocate_buffer -> unexpectedly allocated {} bytes; verify the backend",
+            buffer.len()
+        ),
+        Err(e) => println!("  allocate_buffer -> {e}"),
+    }
+
+    println!("  dispatch        -> cannot be attempted: it takes a CompiledShader");
+    println!("                     and MetalBuffers, and neither can be obtained.");
+    println!("                     Called directly it returns the same refusal.");
     println!();
+    println!("Enumeration above is real, parsed from `system_profiler`.");
+    println!("Shader compilation, buffer allocation and dispatch are not");
+    println!("implemented: they return Error::Unimplemented on every platform,");
+    println!("for every argument, rather than a value that resembles a result.");
+    // docs/ is excluded from the published crate, so a reader who got this
+    // example from crates.io does not have that file. Point at what ships.
+    println!("See the `metal` module docs, or README.md in this crate.");
+}
 
-    // Allocate buffers
-    println!("Allocating GPU buffers...");
-    let buffer_size = 1024 * 1024; // 1MB
-    let buffer_a = compute.allocate_buffer(buffer_size)?;
-    let buffer_b = compute.allocate_buffer(buffer_size)?;
-    let buffer_result = compute.allocate_buffer(buffer_size)?;
-
-    println!(
-        "✓ Allocated 3 buffers × {} KB = {} KB total",
-        buffer_size / 1024,
-        (buffer_size * 3) / 1024
-    );
-    println!();
-
-    // Dispatch compute (stub - would execute on real Metal)
-    println!("Dispatching compute kernel...");
-    let elements = buffer_size / 4; // float = 4 bytes
-    let threadgroup_size = 256;
-    #[allow(clippy::cast_possible_truncation)]
-    let grid_size = (elements / threadgroup_size) as u32;
-    #[allow(clippy::cast_possible_truncation)]
-    let threadgroup_size_u32 = threadgroup_size as u32;
-
-    compute.dispatch(
-        &shader,
-        &[&buffer_a, &buffer_b, &buffer_result],
-        (grid_size, 1, 1),
-        (threadgroup_size_u32, 1, 1),
-    )?;
-
-    println!("✓ Dispatched {elements} threads in {grid_size} threadgroups");
-    println!();
-
-    println!("╔════════════════════════════════════════════════════════════╗");
-    println!("║                    Demo Complete                           ║");
-    println!("╚════════════════════════════════════════════════════════════╝");
-
-    Ok(())
+/// Print one line inside a panel, truncated so the border cannot be pushed out.
+fn row(text: &str) {
+    let text = if text.chars().count() <= ROW {
+        text.to_string()
+    } else {
+        let kept: String = text.chars().take(ROW - 1).collect();
+        format!("{kept}…")
+    };
+    println!("│ {text:<ROW$} │");
 }

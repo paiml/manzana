@@ -8,7 +8,7 @@
 
 use manzana::afterburner::{AfterburnerStats, ProResCodec};
 use manzana::error::{Error, Subsystem};
-use manzana::secure_enclave::{AccessControl, Algorithm, KeyConfig, PublicKey, Signature};
+use manzana::neural_engine::Tensor;
 use manzana::unified_memory::UmaBuffer;
 use proptest::prelude::*;
 use std::collections::HashMap;
@@ -33,7 +33,6 @@ fn subsystem_strategy() -> impl Strategy<Value = Subsystem> {
         Just(Subsystem::Afterburner),
         Just(Subsystem::NeuralEngine),
         Just(Subsystem::Metal),
-        Just(Subsystem::SecureEnclave),
         Just(Subsystem::UnifiedMemory),
     ]
 }
@@ -83,12 +82,14 @@ proptest! {
     // (can exceed 100% if streams_active > streams_capacity)
     #[test]
     fn prop_capacity_used_percent_non_negative(stats in afterburner_stats_strategy()) {
-        prop_assert!(stats.capacity_used_percent() >= 0.0);
+        prop_assert!(stats.capacity_used_percent().unwrap_or(0.0) >= 0.0);
     }
 
-    // Property: capacity_used_percent is 0 when capacity is 0
+    // Property: no capacity means no percentage, for EVERY active count.
+    // Previously asserted 0.0, which made a card with 99 streams running
+    // against an unknown capacity report "0% used".
     #[test]
-    fn prop_capacity_zero_means_zero_percent(
+    fn prop_capacity_zero_means_no_percentage(
         streams_active in 0u32..100
     ) {
         let stats = AfterburnerStats {
@@ -96,7 +97,7 @@ proptest! {
             streams_capacity: 0,
             ..Default::default()
         };
-        prop_assert!((stats.capacity_used_percent() - 0.0).abs() < f64::EPSILON);
+        prop_assert_eq!(stats.capacity_used_percent(), None);
     }
 
     // Property: temperature safety check is consistent
@@ -140,16 +141,10 @@ proptest! {
         prop_assert!(!other_err.is_timeout());
     }
 
-    // Property: error_code returns Some for IoKit and Security, None otherwise
+    // Property: error_code returns Some for IoKit, None otherwise
     #[test]
     fn prop_error_code_iokit(code in -1000i32..1000) {
         let err = Error::iokit(code, "test");
-        prop_assert_eq!(err.error_code(), Some(code));
-    }
-
-    #[test]
-    fn prop_error_code_security(code in -1000i32..1000) {
-        let err = Error::security(code);
         prop_assert_eq!(err.error_code(), Some(code));
     }
 
@@ -211,45 +206,49 @@ proptest! {
             ..Default::default()
         };
         let expected = (f64::from(active) / f64::from(capacity)) * 100.0;
-        prop_assert!((stats.capacity_used_percent() - expected).abs() < 0.001);
+        prop_assert!((stats.capacity_used_percent().unwrap() - expected).abs() < 0.001);
     }
-}
-
-// Strategy for generating AccessControl values
-fn access_control_strategy() -> impl Strategy<Value = AccessControl> {
-    prop_oneof![
-        Just(AccessControl::None),
-        Just(AccessControl::DevicePasscode),
-        Just(AccessControl::Biometric),
-        Just(AccessControl::BiometricOrPasscode),
-    ]
 }
 
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(200))]
 
-    // Property: KeyConfig builder produces valid config
+    // FALSIFY-TENSOR-003 (contract manzana-tensor-v1).
+    //
+    // Construction must be TOTAL: Ok or Err, never a panic. This crate sets
+    // panic = "deny", and Tensor::new is safe and public, so a panicking
+    // constructor is a denial of service reachable from safe code.
+    //
+    // This found a real defect: `shape.iter().product::<usize>()` panicked in
+    // debug and wrapped in release for shapes like [usize::MAX, 2].
     #[test]
-    fn prop_key_config_tag_preserved(tag in "[a-z.]{1,50}") {
-        let config = KeyConfig::new(tag.clone());
-        prop_assert_eq!(config.tag, tag);
-        prop_assert_eq!(config.algorithm, Algorithm::P256);
+    fn prop_tensor_construction_is_total(
+        shape in proptest::collection::vec(0usize..=usize::MAX, 0..4),
+        n in 0usize..64,
+    ) {
+        let data = vec![0.0f32; n];
+        let _ = Tensor::new(shape, data); // must not panic
+        prop_assert!(true);
     }
 
-    // Property: KeyConfig access control is correctly set
+    // The overflow case specifically, since random usize rarely hits it.
     #[test]
-    fn prop_key_config_access_control(
-        tag in "[a-z.]{1,30}",
-        ac in access_control_strategy()
+    fn prop_tensor_overflowing_shape_is_rejected_not_panicking(
+        big in (usize::MAX / 2)..=usize::MAX,
+        m in 2usize..8,
     ) {
-        let config = KeyConfig::new(tag).with_access_control(ac);
-        prop_assert_eq!(config.access_control, ac);
+        let r = Tensor::new(vec![big, m], vec![0.0; 4]);
+        prop_assert!(r.is_err(), "an overflowing shape product must be rejected");
     }
 
     // Property: UMA buffer allocation preserves length
     #[test]
     fn prop_uma_buffer_length_preserved(len in 1usize..100_000) {
-        if let Ok(buffer) = UmaBuffer::new(len) {
+        // NOT `if let Ok(..)`: that made an implementation of UmaBuffer::new
+        // returning Err pass all three properties across every generated case.
+        // Allocation of a valid length must SUCCEED, so assert it.
+        let buffer = UmaBuffer::new(len).expect("valid length must allocate");
+        {
             prop_assert_eq!(buffer.len(), len);
             prop_assert!(!buffer.is_empty());
         }
@@ -258,7 +257,11 @@ proptest! {
     // Property: UMA buffer is always page-aligned
     #[test]
     fn prop_uma_buffer_alignment(len in 1usize..100_000) {
-        if let Ok(buffer) = UmaBuffer::new(len) {
+        // NOT `if let Ok(..)`: that made an implementation of UmaBuffer::new
+        // returning Err pass all three properties across every generated case.
+        // Allocation of a valid length must SUCCEED, so assert it.
+        let buffer = UmaBuffer::new(len).expect("valid length must allocate");
+        {
             prop_assert!(buffer.is_aligned());
             prop_assert!(buffer.allocated_size() >= 4096);
         }
@@ -267,64 +270,31 @@ proptest! {
     // Property: UMA allocated size >= requested size
     #[test]
     fn prop_uma_allocated_ge_requested(len in 1usize..100_000) {
-        if let Ok(buffer) = UmaBuffer::new(len) {
+        // NOT `if let Ok(..)`: that made an implementation of UmaBuffer::new
+        // returning Err pass all three properties across every generated case.
+        // Allocation of a valid length must SUCCEED, so assert it.
+        let buffer = UmaBuffer::new(len).expect("valid length must allocate");
+        {
             prop_assert!(buffer.allocated_size() >= len);
         }
     }
 
     // Property: Valid signature length (64-72 for P-256 DER)
-    #[test]
-    fn prop_signature_valid_length(len in 64usize..73) {
-        let bytes = vec![0x30; len]; // DER SEQUENCE marker
-        let sig = Signature::from_bytes(bytes);
-        prop_assert!(sig.is_ok());
-        if let Ok(s) = sig {
-            prop_assert_eq!(s.len(), len);
-        }
-    }
+
+    //
+    // parse_der_ecdsa_sig does raw indexing and slicing, and this crate sets
+    // panic/unwrap/expect = "deny". A parser reachable from a public
+    // constructor that panics on hostile input is a denial-of-service bug, so
+    // this throws arbitrary bytes at it and only requires that it returns.
+
+    // Property: length-prefix fields are attacker-controlled, so drive them
+    // directly rather than hoping random bytes hit the interesting paths.
+
+    // Property: non-DER bytes of a plausible length are rejected.
 
     // Property: Invalid signature lengths rejected
-    #[test]
-    fn prop_signature_invalid_length_short(len in 1usize..64) {
-        let bytes = vec![0x30; len];
-        let sig = Signature::from_bytes(bytes);
-        prop_assert!(sig.is_err());
-    }
 
-    #[test]
-    fn prop_signature_invalid_length_long(len in 73usize..200) {
-        let bytes = vec![0x30; len];
-        let sig = Signature::from_bytes(bytes);
-        prop_assert!(sig.is_err());
-    }
 
-    // Property: P-256 public key must be 65 bytes
-    #[test]
-    fn prop_public_key_wrong_length_rejected(len in 1usize..200) {
-        if len != 65 {
-            let mut bytes = vec![0x04; len];
-            if !bytes.is_empty() {
-                bytes[0] = 0x04;
-            }
-            let pk = PublicKey::from_bytes(bytes);
-            prop_assert!(pk.is_err());
-        }
-    }
-
-    // Property: AccessControl Display not empty
-    #[test]
-    fn prop_access_control_display_not_empty(ac in access_control_strategy()) {
-        let display = ac.to_string();
-        prop_assert!(!display.is_empty());
-    }
-
-    // Property: Algorithm Display contains P-256
-    #[test]
-    fn prop_algorithm_display(_x in 0..10) {
-        let alg = Algorithm::P256;
-        let display = alg.to_string();
-        prop_assert!(display.contains("P-256"));
-    }
 }
 
 #[cfg(test)]
@@ -347,7 +317,7 @@ mod determinism_tests {
         // Run multiple times and verify same result
         for _ in 0..100 {
             assert!(stats.is_active());
-            assert!((stats.capacity_used_percent() - 43.478).abs() < 0.01);
+            assert!((stats.capacity_used_percent().unwrap() - 43.478).abs() < 0.01);
             assert_eq!(stats.is_temperature_safe(), Some(true));
         }
     }
@@ -360,25 +330,6 @@ mod determinism_tests {
             assert_eq!(err.error_code(), Some(42));
             assert!(!err.is_not_available());
             assert!(!err.is_timeout());
-        }
-    }
-
-    // F099: Secure Enclave determinism
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn test_secure_enclave_deterministic() {
-        use manzana::secure_enclave::SecureEnclaveSigner;
-
-        let config = KeyConfig::new("com.manzana.proptest.determinism");
-        if let Ok(signer) = SecureEnclaveSigner::create(config) {
-            let data = b"Test data for determinism";
-
-            // Sign same data multiple times
-            let sig1 = signer.sign(data).unwrap();
-            let sig2 = signer.sign(data).unwrap();
-
-            // Should produce same signature (deterministic stub)
-            assert_eq!(sig1.as_bytes(), sig2.as_bytes());
         }
     }
 

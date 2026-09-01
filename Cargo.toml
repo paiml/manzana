@@ -1,13 +1,13 @@
 [package]
-exclude = ["tests/", "benches/", "docs/", ".github/", "book/", ".pmat/"]
+exclude = ["tests/", "benches/", "docs/", ".github/", "book/", ".pmat/", "QA_REPORT_2026-01-06.md", ".pv", "contracts/.pv"]
 name = "manzana"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.75"
 license = "MIT"
 description = "Safe Rust interfaces to Apple hardware for Sovereign AI"
 repository = "https://github.com/paiml/manzana"
-keywords = ["apple", "metal", "neural-engine", "afterburner", "sovereign-ai"]
+keywords = ["apple", "metal", "neural-engine", "afterburner", "iokit"]
 categories = ["hardware-support", "os::macos-apis"]
 authors = ["PAIML Team"]
 
@@ -20,8 +20,7 @@ default = []
 afterburner = []
 neural-engine = []
 metal = []
-secure-enclave = []
-full = ["afterburner", "neural-engine", "metal", "secure-enclave"]
+full = ["afterburner", "neural-engine", "metal"]
 
 [dependencies]
 thiserror = "1.0"
@@ -47,10 +46,6 @@ harness = false
 [[example]]
 name = "hardware_discovery"
 path = "examples/hardware_discovery.rs"
-
-[[example]]
-name = "secure_signing"
-path = "examples/secure_signing.rs"
 
 [[example]]
 name = "metal_compute"
