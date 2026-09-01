@@ -49,14 +49,18 @@ The same pattern existed outside the module named in the advisory:
   a `&[u8]` over it. Constructing a reference to uninitialized memory is
   undefined behaviour, and it was reachable from entirely safe code. Now
   allocates with `alloc_zeroed`.
+  `[V]` `cargo test test_new_buffer_is_initialized_not_uninit`
 - **Vulnerable dependency:** updated `crossbeam-epoch` 0.9.18 → 0.9.20 for
   [RUSTSEC-2026-0204][c] (invalid pointer dereference).
+  `[V]` `cargo deny check advisories`
 - `make miri` ended in `2>/dev/null || echo`, so it could never fail — it was
   the sole basis for the README's "MIRI-verified" claim. `make deny` had the
   same shape, converting real `cargo-deny` violations into a "not configured"
   message. Both now fail properly.
+  `[V]` `make miri` with miri absent exits non-zero
 - MSRV violation: a lint attribute used `reason = `, which requires Rust 1.81
   while this crate declares `rust-version = "1.75"`.
+  `[V]` `cargo +1.75 check`
 
 ### Changed
 
@@ -64,13 +68,17 @@ The same pattern existed outside the module named in the advisory:
   `Error::Unimplemented` instead of a fabricated value. An operation that
   cannot do the real thing must fail loudly; a plausible-looking result is more
   dangerous, because a caller cannot distinguish it from a genuine one.
-- `secure_enclave` delegates to [`security-framework`][sf] rather than binding
-  `Security.framework` itself, which makes it structurally impossible for
-  manzana to return a fabricated key or signature.
+  `[V]` refusal tests asserting `err.is_unimplemented()` per operation
+- `secure_enclave` performs **no** cryptography in 0.3.0. The fabricating
+  bodies are deleted and every operation returns `Error::Unimplemented`.
+  Delegating to [`security-framework`][sf] is the 0.4.0 architecture; it is
+  **not shipped code**, and no such dependency is declared.
+  `[V]` `cargo test test_no_construction_path_exists`
 - Security-critical tests are no longer `#[cfg(target_os = "macos")]`-gated.
   That gating left the default Linux CI lane with an *empty* test set for the
   cryptographic surface — and zero tests passing is indistinguishable from all
   tests passing. The replacements assert refusal and run everywhere.
+  `[V]` zero `cfg(target_os)` attributes on security tests
 - Tests that asserted the fabricated behaviour were correct — including a
   property test whose own comment called it a "deterministic stub" — have been
   inverted to assert refusal.

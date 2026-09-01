@@ -29,9 +29,16 @@ failure** — recurred in `neural_engine`, `metal`, and `unified_memory`. It was
 not a single bad function. It was a house style.
 
 0.3.0 removes every fabricating code path. Operations that cannot reach real
-hardware return `Error::Unimplemented`. The `secure_enclave` module delegates
-to [`security-framework`][sf] rather than binding `Security.framework` itself,
-which makes fabrication *structurally* impossible rather than merely absent.
+hardware return `Error::Unimplemented`. **That is the whole of 0.3.0**: the
+crate does less, and says so.
+
+Delegating `secure_enclave` to [`security-framework`][sf] — and, under the
+charter in §5.0, deleting the module outright — is the **0.4.0** architecture.
+It is not shipped code and no such dependency is declared. Earlier drafts of
+this document and of the changelog asserted the delegation in the present
+tense while §7 listed it as outstanding. That is the same stale-self-description
+defect this document exists to analyse, and it is recorded here rather than
+quietly corrected.
 
 ---
 
@@ -142,6 +149,11 @@ Unrelated to the advisory, but shipped in the same artifacts. Fixed via
 - **A2 — signature artifacts** already produced and distributed.
 - **A3 — operator belief about key destruction** (`delete`).
 - **A4 — capacity/telemetry decisions** made from fabricated hardware specs.
+- **A5 — downstream ML artifacts** derived from fabricated tensors.
+  `neural_engine::infer` returned shaped zeros, which are *plausible* and
+  outlive the process in checkpoints, evaluation records, and training data.
+  Zeros are indistinguishable from convergence, so contamination is silent and
+  propagates past the crate's own boundary. Arguably ranks above A4.
 
 **Trust boundaries:**
 
@@ -171,7 +183,37 @@ manufactures one that never existed.
 
 ## 4. Root cause
 
-Not "someone forgot." Four independent mechanisms each had to fail:
+Not "someone forgot." Four independent mechanisms each had to fail.
+
+**Every one is an already-named class in the fleet taxonomy**
+(`APR-QUALITY-001` §F1–F10). None was novel, and none had a lane enforcing it
+in this repository. Naming them here is what lets the gates propagate to the
+other repositories where the same class can recur; a manzana-local gate fixes
+manzana only.
+
+| Finding | Class | Existing doctrine |
+|---|---|---|
+| `sign`/`delete` returning fabricated `Ok` | **F7 — silent pass** | "tests asserting `is_ok()` on invalid input" is already a listed F7 instance. A probe must *exclude* an outcome; exit 0 is not a pass |
+| `make miri` ending `2>/dev/null \|\| echo` | **F7, laundering primitive P7** | Characterised verbatim in the taxonomy. manzana simply had no gate |
+| `verify()` calling `self.sign()` | **F9 — coupled falsifier** | Textbook. Remedy is a differential oracle, not a replacement — §8.4 |
+| 26 tests vanishing on Linux; `0 ignored` reads as pass | **F8 — missing denominator** / F3 vacuity | Architectural, not a gate — §8.2 |
+| `///` docs describing hardware crypto above `//` "fake" comments | **F10 — stale self-description** | Claims must be derived or gated; doc update in the same PR |
+| `pmat analyze satd` → 0 debt over `// generates a fake public key` | Detector-side F3/F8 | **Fleet scope, not manzana-local** — routed below |
+
+Two items are fleet-scope and do not belong to this repository's backlog:
+
+- **SATD lexicon extension** — add `fake`, `stub`, `placeholder`, `dummy`,
+  `simulated`, `for now`, `assume`. Requires a mutation-RED receipt: the string
+  `// generates a fake public key` must score as debt, and an unrelated comment
+  must not.
+- **`pmat comply` falsification-checker discrimination check** — it returned
+  10/10 against fabricated implementations, so the checker cannot currently
+  distinguish a real falsification claim from a decorative one.
+
+This document is itself a permanent falsifier and should be cross-referenced
+from `APR-QUALITY-001` §F7 and §F9.
+
+The four mechanisms:
 
 **4.1 Nothing in the type system prevented it.** `Signature::from_bytes` was
 `pub` and validated only `64 <= len <= 72`, so `vec![0x30; 70]` was a valid
@@ -227,16 +269,40 @@ run; the true Linux figure was 141.
 
 Encoded as `Error::Unimplemented` and asserted by ungated refutation tests.
 
-### 5.2 Delegate rather than bind
+### 5.0 Charter — what manzana is for
 
-`secure_enclave` delegates to `security-framework` (349M downloads). This is
-the primary structural control: `SecKey::new` returns a `Result` which is
-propagated, so **there is no code path in manzana that can invent a key or a
-signature.** This property holds independently of whether the success path has
-been exercised — which matters, because it currently cannot be (§5.4).
+Non-goals (§9) say what the crate does not claim. They cannot decide the fate
+of the module at the centre of the advisory. A charter can:
 
-Hand-writing the FFI was rejected: unverifiable hand-rolled crypto FFI is a
-larger risk than the one being fixed.
+> **manzana exposes Apple hardware capabilities to Rust where no maintained
+> Rust crate already does. Where one exists, manzana documents it and ships
+> nothing.**
+
+| Surface | Existing Rust crate | Verdict |
+|---|---|---|
+| Secure Enclave / `SecKey` | `security-framework` (349M downloads) | **Out of charter** |
+| IOKit discovery, Afterburner stats | none maintained | In charter — the reason to exist |
+| Metal enumeration | partial (`metal-rs`) | In charter for enumeration |
+| ANE / CoreML capability query | none | In charter, highest differentiated value |
+| `UmaBuffer` host allocation | trivial | In charter only once it is a real `MTLBuffer` |
+
+### 5.1 Delete rather than delegate
+
+Wrapping `security-framework` adds **zero capability** and imports 100% of the
+advisory surface. It keeps a module whose entire body forwards to another
+crate, permanently attaches RUSTSEC-2026-0273 to manzana, and preserves a
+wrapper that must be re-audited forever.
+
+Deleting `secure_enclave` drives the cryptographic attack surface to zero and
+makes "never build cryptography" un-violable by construction rather than by
+policy.
+
+**Sequencing.** 0.3.0 ships refusal exactly as the issue reply describes — a
+live disclosure must not be churned. 0.4.0 removes the module behind a
+`deprecated` cycle pointing at `security-framework`.
+
+`UmaBuffer` is named for a capability it does not have. That is
+stale self-description in a *type name*, and it is in scope for the same pass.
 
 ### 5.3 Make fabrication unrepresentable, not merely absent
 
@@ -322,7 +388,10 @@ Acceptance criteria are falsifiable — each names something that can fail.
 
 | # | Item | Acceptance | Verifiable on Linux |
 |---|---|---|---|
-| 13 | Real `security-framework` backend | `create` returns a genuine `OSStatus`, never a synthetic key | Partly — error path only |
+| P1-a | Clean-room lane green | `make clean-room-p1` GREEN; gate exists at `paiml/infra:machines/clean-room/gates/manzana.sh` (**verified present**) | Yes |
+| P1-b | Publish only from CI, tagged, clean tree | Workflow fails unless `git describe --exact-match` succeeds and the worktree is clean; `--allow-dirty` and `--no-verify` banned. Proven by a dirty-publish attempt going RED | Yes |
+| P1-c | Provenance resolvable | The published `.cargo_vcs_info.json` sha resolves in the repo — asserted post-publish, not assumed | Yes |
+| 13 | Delete public constructors on cryptographic types | 0 public constructors on `Signature`/`PublicKey`; the DER parser is deleted with them | Yes |
 | 14 | De-`const` `is_available()` | Signature is non-`const` | Yes |
 | 15 | Tag the release | `git tag -l` non-empty | Yes |
 | 16 | Ban item-level `cfg(target_os)` on `#[test]` | CI gate fails if reintroduced | Yes |
@@ -333,7 +402,7 @@ Acceptance criteria are falsifiable — each names something that can fail.
 | # | Item |
 |---|---|
 | 18 | Sealed hardware witness making `Signature` unrepresentable without SEP |
-| 19 | On-curve validation in `PublicKey::from_bytes` (needs P-256 arithmetic — dependency decision) |
+
 | 20 | Apple Developer cert → signed harness → prove the SE success path (§5.4) |
 | 21 | Wire feature flags — no `#[cfg(feature)]` exists in `src/` today, so flags gate nothing |
 | 22 | Contract machinery: `manzana-tensor-v1.yaml` does not exist; the `#[contract]` attribute proves nothing |
@@ -371,12 +440,29 @@ Acceptance criteria are falsifiable — each names something that can fail.
 
 ## 10. Open questions
 
-1. Does the `4a76402` object survive on any machine? It scopes §6.2.
-2. Apple Developer account for a signed test harness (§7 item 20)?
-3. Accept a P-256 dependency for on-curve validation (§7 item 19)?
-4. Should the single crates.io reverse dependency be contacted directly, since
-   the yank will not reach them?
-5. Should the API token that published 0.1.0/0.2.0 be rotated?
+Genuinely open:
+
+1. **Does the `4a76402` object survive on any machine?** It scopes §6.2. If it
+   does not, the published 0.2.0 is permanently unreproducible and that should
+   be stated as fact rather than left ambiguous.
+2. **Apple Developer certificate for a signed test harness?** This gates any
+   future claim that a Secure Enclave success path works. Until it is answered
+   the honest statement is *"the success path has never executed"*, and that
+   belongs in the README capability matrix, not only in this document.
+
+Closed — these were listed as open in an earlier draft, but the charter (§5.0)
+or plain cost already decides them:
+
+3. ~~Accept a P-256 dependency for on-curve validation?~~ **Dissolved.** Under
+   §5.1 manzana accepts no cryptographic bytes across its API boundary, so
+   there is nothing to validate. Deleting the constructors obtains the property
+   by removal instead of by code.
+4. ~~Contact the single reverse dependency?~~ **Yes.** §6.1 establishes the
+   yank reaches neither existing lockfiles nor the 3,824 downloads. One direct
+   message costs minutes.
+5. ~~Rotate the publishing token?~~ **Yes.** It published a fabricating
+   artifact from an unreproducible tree. Rotation is free; scope the
+   replacement per-crate.
 
 [adv]: https://rustsec.org/advisories/RUSTSEC-2026-0273.html
 [i3]: https://github.com/paiml/manzana/issues/3

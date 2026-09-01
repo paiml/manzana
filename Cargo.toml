@@ -33,11 +33,6 @@ provable-contracts-macros = "0.1"
 core-foundation = "0.10"
 core-foundation-sys = "0.8"
 mach2 = "0.4"
-# Secure Enclave / Keychain access. manzana delegates all cryptography here
-# rather than binding Security.framework itself: this crate is widely used and
-# audited, and delegating makes it structurally impossible for manzana to
-# return a fabricated key or signature.
-security-framework = { version = "3.7", features = ["OSX_10_15"] }
 
 [dev-dependencies]
 proptest = "1.4"
