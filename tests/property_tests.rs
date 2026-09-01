@@ -291,6 +291,32 @@ proptest! {
         prop_assert_eq!(sig.unwrap().len(), der.len());
     }
 
+    // Property: the DER parser must never panic, on ANY input.
+    //
+    // parse_der_ecdsa_sig does raw indexing and slicing, and this crate sets
+    // panic/unwrap/expect = "deny". A parser reachable from a public
+    // constructor that panics on hostile input is a denial-of-service bug, so
+    // this throws arbitrary bytes at it and only requires that it returns.
+    #[test]
+    fn prop_signature_parser_never_panics(bytes in proptest::collection::vec(any::<u8>(), 0..300)) {
+        let _ = Signature::from_bytes(bytes);
+    }
+
+    // Property: length-prefix fields are attacker-controlled, so drive them
+    // directly rather than hoping random bytes hit the interesting paths.
+    #[test]
+    fn prop_signature_parser_survives_hostile_lengths(
+        seq_len in any::<u8>(), r_len in any::<u8>(), s_len in any::<u8>(),
+        tail in proptest::collection::vec(any::<u8>(), 0..80),
+    ) {
+        let mut v = vec![0x30, seq_len, 0x02, r_len];
+        v.extend_from_slice(&tail);
+        v.push(0x02);
+        v.push(s_len);
+        v.extend_from_slice(&tail);
+        let _ = Signature::from_bytes(v);
+    }
+
     // Property: non-DER bytes of a plausible length are rejected.
     #[test]
     fn prop_signature_rejects_non_der(len in 64usize..73, fill in 0u8..=255) {
