@@ -65,7 +65,7 @@ audit:
 deny:
 	@echo "📋 Checking dependencies..."
 	@command -v cargo-deny >/dev/null 2>&1 || { echo "Installing cargo-deny..."; cargo install cargo-deny; }
-	cargo deny check 2>/dev/null || echo "⚠️  cargo-deny not configured (create deny.toml)"
+	cargo deny check
 
 # =============================================================================
 # TIER 3: ON-MERGE (Hours - exhaustive QA)
@@ -80,7 +80,12 @@ mutation:
 
 miri:
 	@echo "🔬 Running MIRI (undefined behavior check)..."
-	@rustup run nightly cargo miri test --lib 2>/dev/null || echo "⚠️  MIRI requires nightly: rustup +nightly component add miri"
+	@rustup run nightly cargo miri --version >/dev/null 2>&1 || { \
+		echo "❌ MIRI is not installed. Install it with:"; \
+		echo "     rustup +nightly component add miri"; \
+		echo "   This target must not be reported as passing without it."; \
+		exit 1; }
+	rustup run nightly cargo miri test --lib
 
 bench:
 	@echo "⏱️  Running benchmarks..."

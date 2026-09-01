@@ -1,12 +1,31 @@
-//! FFI bindings for Security.framework (Secure Enclave operations).
+//! Type definitions for a future Security.framework binding.
 //!
-//! This module provides low-level bindings to Apple's Security.framework
-//! for Secure Enclave operations. All unsafe code is quarantined here.
+//! # ⚠️ This module contains no FFI ⚠️
+//!
+//! Despite its name and location, this file declares **no `extern "C"` blocks
+//! and executes no `unsafe` code**. It holds a handful of type aliases, an
+//! `OSStatus` mapping, and a struct. Nothing here calls Security.framework.
+//!
+//! The `#![allow(unsafe_code)]` below is therefore vestigial — it grants a
+//! permission this module never exercises. It is retained only so the
+//! quarantine boundary stays declared where the real bindings will land.
+//!
+//! Earlier README text described this file as part of an "FFI QUARANTINE ZONE
+//! — Audited, MIRI-verified". No audit or MIRI run could have covered code
+//! that does not exist, and the `make miri` target that nominally backed the
+//! claim suppressed its own failures and could not fail. Both have been
+//! corrected.
+//!
+//! Note also that `src/unified_memory.rs` carries its own
+//! `#![allow(unsafe_code)]`, so unsafe code in this crate is not confined to
+//! `src/ffi/` as previously documented.
 //!
 //! # Safety
 //!
-//! This module uses `unsafe` for FFI calls. All bindings are verified
-//! against Apple's Security.framework documentation.
+//! No safety argument is required today, because no `unsafe` operation is
+//! performed. When real bindings are added, each must carry its own
+//! `// SAFETY:` justification covering CFType ownership (the Create/Get rule),
+//! `SecKeyRef` lifetime and `CFRelease` discipline, and null-pointer handling.
 //!
 //! # References
 //!
@@ -92,32 +111,23 @@ impl Default for KeyAttributes {
 ///
 /// # Returns
 ///
-/// `true` if running on a device with Secure Enclave (T2 or Apple Silicon).
+/// Always returns `false`: hardware detection is not implemented.
+///
+/// The previous implementation returned `true` for **all** macOS builds,
+/// including `x86_64` hosts with no T2 chip, on the reasoning that T2
+/// detection "would require an IOKit query". Guessing `true` on a machine
+/// with no Secure Enclave is the least safe of the available answers.
+///
+/// A real implementation matches the `AppleSEPManager` service via
+/// `IOServiceMatching` (or checks for `AppleT2` on Intel hosts) and reports
+/// what it actually found.
 #[must_use]
 pub const fn is_secure_enclave_available() -> bool {
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    {
-        // Apple Silicon always has Secure Enclave
-        true
-    }
-    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
-    {
-        // T2 detection would require IOKit query
-        // For now, assume available on recent Intel Macs
-        // Real implementation: IOServiceMatching("AppleT2")
-        true
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        false
-    }
+    false
 }
 
-// Note: The following functions are stubs for the Security.framework API.
-// They are intentionally simple and will be replaced with actual FFI calls
-// when implementing real Secure Enclave support.
-//
-// The actual implementation would use:
+// No Security.framework functions are bound yet. A real implementation would
+// use:
 // - SecKeyCreateRandomKey for key creation
 // - SecItemDelete for key deletion
 // - SecKeyCreateSignature for signing
@@ -129,12 +139,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_is_secure_enclave_available() {
-        let available = is_secure_enclave_available();
-        #[cfg(target_os = "macos")]
-        assert!(available);
-        #[cfg(not(target_os = "macos"))]
-        assert!(!available);
+    fn test_is_secure_enclave_available_never_guesses() {
+        // Ungated on purpose: the answer is the same everywhere, and the
+        // previous cfg-split asserted `true` on macOS without ever checking
+        // for the hardware.
+        assert!(
+            !is_secure_enclave_available(),
+            "detection is unimplemented; it must report false rather than assume"
+        );
     }
 
     #[test]

@@ -363,22 +363,24 @@ mod determinism_tests {
         }
     }
 
-    // F099: Secure Enclave determinism
+    // F099: Secure Enclave refuses consistently, for every input.
+    //
+    // The previous version of this test asserted that signing the same data
+    // twice produced identical bytes, describing it in its own comment as a
+    // "deterministic stub" -- it encoded the fake as the expected behaviour.
     #[test]
-    #[cfg(target_os = "macos")]
-    fn test_secure_enclave_deterministic() {
+    fn test_secure_enclave_refuses_consistently() {
         use manzana::secure_enclave::SecureEnclaveSigner;
 
-        let config = KeyConfig::new("com.manzana.proptest.determinism");
-        if let Ok(signer) = SecureEnclaveSigner::create(config) {
-            let data = b"Test data for determinism";
-
-            // Sign same data multiple times
-            let sig1 = signer.sign(data).unwrap();
-            let sig2 = signer.sign(data).unwrap();
-
-            // Should produce same signature (deterministic stub)
-            assert_eq!(sig1.as_bytes(), sig2.as_bytes());
+        for tag in [
+            "",
+            "a",
+            "com.manzana.proptest.determinism",
+            "x".repeat(512).as_str(),
+        ] {
+            let err = SecureEnclaveSigner::create(KeyConfig::new(tag))
+                .expect_err("must never manufacture a signer");
+            assert!(err.is_unimplemented(), "tag {tag:?} produced {err:?}");
         }
     }
 

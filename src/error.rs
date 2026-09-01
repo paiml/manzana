@@ -94,6 +94,20 @@ pub enum Error {
         /// Details about the internal error.
         details: String,
     },
+
+    /// The requested operation is not implemented.
+    ///
+    /// Manzana returns this rather than fabricating a plausible-looking
+    /// result. An operation that cannot talk to the real hardware must
+    /// fail loudly; it must never return a value a caller could mistake
+    /// for the genuine article.
+    #[error("operation not implemented: {operation} ({subsystem})")]
+    Unimplemented {
+        /// Subsystem the operation belongs to.
+        subsystem: Subsystem,
+        /// The operation that is not implemented.
+        operation: String,
+    },
 }
 
 /// Hardware subsystems supported by Manzana.
@@ -202,10 +216,25 @@ impl Error {
         }
     }
 
+    /// Create a new `Unimplemented` error.
+    #[must_use]
+    pub fn unimplemented(subsystem: Subsystem, operation: impl Into<String>) -> Self {
+        Self::Unimplemented {
+            subsystem,
+            operation: operation.into(),
+        }
+    }
+
     /// Check if this error indicates hardware is unavailable.
     #[must_use]
     pub const fn is_not_available(&self) -> bool {
         matches!(self, Self::NotAvailable { .. })
+    }
+
+    /// Check if this error indicates the operation is not implemented.
+    #[must_use]
+    pub const fn is_unimplemented(&self) -> bool {
+        matches!(self, Self::Unimplemented { .. })
     }
 
     /// Check if this error is a timeout.

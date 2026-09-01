@@ -1,49 +1,63 @@
 //! Secure Enclave cryptographic operations.
 //!
-//! The Secure Enclave is a hardware-based key manager isolated from
-//! the main processor. Available on T2 Macs and Apple Silicon, it
-//! provides secure key storage and cryptographic operations.
+//! # ⚠️ NOT IMPLEMENTED — DO NOT USE FOR CRYPTOGRAPHY ⚠️
+//!
+//! **This module performs no cryptography and no Secure Enclave operations.**
+//! Every operation returns [`Error::Unimplemented`]. The types below describe
+//! the intended future API surface; there is no backend behind them.
+//!
+//! For real Secure Enclave and Keychain access today, use the
+//! [`security-framework`](https://crates.io/crates/security-framework) crate.
+//!
+//! ## Why this module exists in this state
+//!
+//! Versions 0.1.0 and 0.2.0 of this crate shipped *stubbed* implementations
+//! that returned fabricated values while documenting themselves as real
+//! hardware-backed cryptography:
+//!
+//! - `create()` returned a hardcoded public key derived from a byte-sum of the
+//!   key tag — no key was ever generated, in the Secure Enclave or anywhere else.
+//! - `sign()` returned a DER-shaped blob whose `r` was 32 copies of a byte-sum
+//!   of the message and whose `s` was 32 copies of a byte-sum of the tag.
+//! - `verify()` recomputed that same value and compared it, so it returned
+//!   `true` for the forgery and could not reject anything an attacker who knew
+//!   the tag could produce.
+//!
+//! Those versions have been **yanked** from crates.io. See
+//! [issue #3](https://github.com/paiml/manzana/issues/3) and
+//! `docs/specifications/security-architecture-plan.md`.
+//!
+//! Rather than fix the fake values, this release removes them. A security
+//! operation that cannot reach real hardware must fail loudly; returning a
+//! plausible-looking result is the more dangerous outcome, because a caller
+//! cannot tell it apart from a genuine one.
 //!
 //! # Example
 //!
-//! ```no_run
+//! Every call currently fails. Callers must handle that:
+//!
+//! ```
 //! use manzana::secure_enclave::{SecureEnclaveSigner, KeyConfig};
 //!
-//! // Check availability
-//! if SecureEnclaveSigner::is_available() {
-//!     // Create a new signing key
-//!     let config = KeyConfig::new("com.example.myapp.signing");
-//!     let signer = SecureEnclaveSigner::create(config)?;
+//! // `is_available()` reports whether manzana can actually perform Secure
+//! // Enclave operations. It is `false` in this release on every platform.
+//! assert!(!SecureEnclaveSigner::is_available());
 //!
-//!     // Sign data
-//!     let signature = signer.sign(b"Hello, Secure Enclave!")?;
-//!
-//!     // Verify signature
-//!     assert!(signer.verify(b"Hello, Secure Enclave!", &signature)?);
-//! }
-//! # Ok::<(), manzana::Error>(())
+//! let err = SecureEnclaveSigner::create(KeyConfig::new("com.example.signing"))
+//!     .expect_err("Secure Enclave support is not implemented");
+//! assert!(err.is_unimplemented());
 //! ```
 //!
-//! # Security Model
+//! # Intended Security Model (not yet delivered)
 //!
-//! Keys created in the Secure Enclave:
+//! When implemented on top of `Security.framework`, keys created in the
+//! Secure Enclave would:
 //! - Never leave the hardware security module
-//! - Are bound to the specific device
-//! - Can require biometric authentication
-//! - Are protected against extraction even with root access
+//! - Be bound to the specific device
+//! - Optionally require biometric authentication
+//! - Resist extraction even by root
 //!
-//! # Falsification Claims
-//!
-//! - F061: Secure Enclave detected on T2/Apple Silicon
-//! - F062: Returns unavailable on older Mac
-//! - F063: Key creation succeeds
-//! - F064: Key retrieval works
-//! - F065: Signature is valid P-256 ECDSA
-//! - F066: Verification succeeds for valid signature
-//! - F067: Verification fails for invalid signature
-//! - F068: Different data produces different signature
-//! - F069: Key deletion works
-//! - F070: Biometric prompt shown when configured
+//! None of those properties hold today, because no key is created.
 
 use crate::error::{Error, Result};
 
@@ -258,32 +272,21 @@ impl std::fmt::Debug for SecureEnclaveSigner {
 }
 
 impl SecureEnclaveSigner {
-    /// Check if Secure Enclave is available on this system.
+    /// Check whether manzana can perform Secure Enclave operations.
     ///
-    /// Returns `true` on T2 Macs and Apple Silicon, `false` otherwise.
+    /// **Always returns `false` in this release**, on every platform,
+    /// because no Secure Enclave backend is implemented.
+    ///
+    /// This reports *capability*, not *hardware presence*: it answers "can
+    /// this library sign something for me right now?", which is the question
+    /// a caller actually needs answered. Reporting the presence of hardware
+    /// that manzana cannot reach would invite exactly the misuse that
+    /// [issue #3](https://github.com/paiml/manzana/issues/3) described — and
+    /// the previous implementation compounded it by returning `true`
+    /// unconditionally on Intel macOS, where no T2 chip may exist at all.
     #[must_use]
     pub const fn is_available() -> bool {
-        #[cfg(target_os = "macos")]
-        {
-            // Available on:
-            // - Apple Silicon (M1, M2, M3, etc.)
-            // - T2 Macs (2018+ MacBook Pro, iMac Pro, Mac mini, Mac Pro)
-            // We detect Apple Silicon directly; T2 requires runtime check
-            #[cfg(target_arch = "aarch64")]
-            {
-                true
-            }
-            #[cfg(not(target_arch = "aarch64"))]
-            {
-                // T2 detection would require IOKit query at runtime
-                // For now, assume available on macOS x86_64 (conservative)
-                true
-            }
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            false
-        }
+        false
     }
 
     /// Create a new key in the Secure Enclave.
@@ -294,48 +297,28 @@ impl SecureEnclaveSigner {
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - Secure Enclave is not available
-    /// - A key with the same tag already exists
-    /// - Key creation fails
+    /// Always returns [`Error::Unimplemented`] in this release. No Secure
+    /// Enclave backend exists, and this function will not fabricate a key.
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```
     /// use manzana::secure_enclave::{SecureEnclaveSigner, KeyConfig};
     ///
-    /// let config = KeyConfig::new("com.example.signing")
-    ///     .with_label("My Signing Key");
-    /// let signer = SecureEnclaveSigner::create(config)?;
-    /// # Ok::<(), manzana::Error>(())
+    /// let err = SecureEnclaveSigner::create(KeyConfig::new("com.example.signing"))
+    ///     .expect_err("not implemented");
+    /// assert!(err.is_unimplemented());
     /// ```
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "the signature is the intended one; a real backend consumes the config"
+    )]
     pub fn create(config: KeyConfig) -> Result<Self> {
-        if !Self::is_available() {
-            return Err(Error::not_available(crate::error::Subsystem::SecureEnclave));
-        }
-
-        // Validate tag
-        if config.tag.is_empty() {
-            return Err(Error::invalid_input("key tag cannot be empty"));
-        }
-
-        // Stub implementation - generates a fake public key
-        // Real implementation would use Security.framework
-        let mut public_key_bytes = vec![0x04]; // Uncompressed point format
-        public_key_bytes.extend_from_slice(&[0u8; 32]); // X coordinate (stub)
-        public_key_bytes.extend_from_slice(&[1u8; 32]); // Y coordinate (stub)
-
-        // Make it look unique based on tag
-        let tag_hash = config.tag.bytes().fold(0u8, u8::wrapping_add);
-        public_key_bytes[1] = tag_hash;
-
-        let public_key = PublicKey::from_bytes(public_key_bytes)?;
-
-        Ok(Self {
-            tag: config.tag,
-            public_key,
-            _not_send_sync: std::marker::PhantomData,
-        })
+        drop(config);
+        Err(Error::unimplemented(
+            crate::error::Subsystem::SecureEnclave,
+            "key creation (requires SecKeyCreateRandomKey)",
+        ))
     }
 
     /// Load an existing key from the Secure Enclave.
@@ -346,23 +329,17 @@ impl SecureEnclaveSigner {
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - Secure Enclave is not available
-    /// - No key exists with the given tag
+    /// Always returns [`Error::Unimplemented`] in this release.
+    ///
+    /// Note that earlier versions returned [`Error::NotFound`] here, which was
+    /// itself misleading: it implied a keychain had been searched and the key
+    /// was genuinely absent, when in fact nothing was ever queried.
     pub fn load(tag: impl Into<String>) -> Result<Self> {
-        let tag = tag.into();
-
-        if !Self::is_available() {
-            return Err(Error::not_available(crate::error::Subsystem::SecureEnclave));
-        }
-
-        if tag.is_empty() {
-            return Err(Error::invalid_input("key tag cannot be empty"));
-        }
-
-        // Stub: In real implementation, this would query the keychain
-        // For now, return NotFound to simulate missing key
-        Err(Error::not_found(format!("key with tag '{tag}'")))
+        let _ = tag.into();
+        Err(Error::unimplemented(
+            crate::error::Subsystem::SecureEnclave,
+            "key lookup (requires SecItemCopyMatching)",
+        ))
     }
 
     /// Delete the key from the Secure Enclave.
@@ -374,12 +351,17 @@ impl SecureEnclaveSigner {
     ///
     /// # Errors
     ///
-    /// Returns an error if deletion fails.
+    /// Always returns [`Error::Unimplemented`] in this release.
+    ///
+    /// Earlier versions returned `Ok(())` without deleting anything. Reporting
+    /// success for a destructive security operation that did not occur is its
+    /// own critical defect: a caller told "the key is destroyed" may go on to
+    /// decommission a device or publish a revocation on that basis.
     pub fn delete(self) -> Result<()> {
-        // Stub: In real implementation, this would delete from keychain
-        // Consume self to prevent further use
-        let _ = self.tag;
-        Ok(())
+        Err(Error::unimplemented(
+            crate::error::Subsystem::SecureEnclave,
+            "key deletion (requires SecItemDelete)",
+        ))
     }
 
     /// Get the public key.
@@ -402,46 +384,18 @@ impl SecureEnclaveSigner {
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - Signing fails
-    /// - User cancels biometric prompt (if required)
+    /// Always returns [`Error::Unimplemented`] in this release.
     ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use manzana::secure_enclave::{SecureEnclaveSigner, KeyConfig};
-    ///
-    /// let signer = SecureEnclaveSigner::create(KeyConfig::new("com.example.key"))?;
-    /// let signature = signer.sign(b"Important document")?;
-    /// println!("Signature: {} bytes", signature.len());
-    /// # Ok::<(), manzana::Error>(())
-    /// ```
+    /// The removed implementation produced a DER-shaped value whose `r` was 32
+    /// copies of a wrapping byte-sum of `data` and whose `s` was 32 copies of a
+    /// wrapping byte-sum of the key tag — roughly 8 bits of entropy in each
+    /// half, and trivially forgeable by anyone who knew the tag.
     pub fn sign(&self, data: &[u8]) -> Result<Signature> {
-        if data.is_empty() {
-            return Err(Error::invalid_input("cannot sign empty data"));
-        }
-
-        // Stub: Generate deterministic fake signature based on data and tag
-        // Real implementation would use Security.framework SecKeyCreateSignature
-        let mut sig_bytes = Vec::with_capacity(70);
-
-        // DER header for P-256 ECDSA signature
-        sig_bytes.push(0x30); // SEQUENCE
-        sig_bytes.push(0x44); // Length (68 bytes typically)
-
-        // R value
-        sig_bytes.push(0x02); // INTEGER
-        sig_bytes.push(0x20); // Length (32 bytes)
-        let r_seed = data.iter().fold(0u8, |acc, &b| acc.wrapping_add(b));
-        sig_bytes.extend_from_slice(&[r_seed; 32]);
-
-        // S value
-        sig_bytes.push(0x02); // INTEGER
-        sig_bytes.push(0x20); // Length (32 bytes)
-        let s_seed = self.tag.bytes().fold(0u8, u8::wrapping_add);
-        sig_bytes.extend_from_slice(&[s_seed; 32]);
-
-        Signature::from_bytes(sig_bytes)
+        let _ = data;
+        Err(Error::unimplemented(
+            crate::error::Subsystem::SecureEnclave,
+            "signing (requires SecKeyCreateSignature)",
+        ))
     }
 
     /// Verify a signature against data.
@@ -453,17 +407,18 @@ impl SecureEnclaveSigner {
     ///
     /// # Errors
     ///
-    /// Returns an error if verification fails due to an internal error.
-    /// Returns `Ok(false)` for invalid signatures.
+    /// Always returns [`Error::Unimplemented`] in this release.
+    ///
+    /// This function never returns `Ok(false)` to mean "invalid signature",
+    /// because it cannot distinguish valid from invalid. The removed
+    /// implementation re-derived the fake signature and compared bytes, so it
+    /// accepted forgeries and had no cryptographic meaning whatsoever.
     pub fn verify(&self, data: &[u8], signature: &Signature) -> Result<bool> {
-        if data.is_empty() {
-            return Err(Error::invalid_input("cannot verify empty data"));
-        }
-
-        // Stub: Verify by regenerating the expected signature
-        // Real implementation would use Security.framework SecKeyVerifySignature
-        let expected = self.sign(data)?;
-        Ok(expected.as_bytes() == signature.as_bytes())
+        let _ = (data, signature);
+        Err(Error::unimplemented(
+            crate::error::Subsystem::SecureEnclave,
+            "signature verification (requires SecKeyVerifySignature)",
+        ))
     }
 }
 
@@ -477,151 +432,83 @@ pub const fn is_available() -> bool {
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
+#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
 
     // F061: Secure Enclave detected on T2/Apple Silicon
     #[test]
     fn test_is_available_platform_detection() {
-        let available = SecureEnclaveSigner::is_available();
-        // On macOS: should be available (T2 or Apple Silicon)
-        // On other platforms: should not be available
-        #[cfg(target_os = "macos")]
-        assert!(available, "Secure Enclave should be available on macOS");
-        #[cfg(not(target_os = "macos"))]
+        // Capability, not hardware presence: manzana cannot perform Secure
+        // Enclave operations in this release on any platform.
         assert!(
-            !available,
-            "Secure Enclave should not be available on non-macOS"
+            !SecureEnclaveSigner::is_available(),
+            "is_available() must report false while no backend is implemented"
         );
     }
 
-    // F063: Key creation succeeds
+    /// Every operation must fail loudly rather than fabricate a result.
+    ///
+    /// These tests are deliberately NOT gated on `target_os = "macos"`. The
+    /// previous suite gated the entire cryptographic surface behind macOS, so
+    /// the Linux test matrix for it was empty and CI stayed green no matter
+    /// what those functions returned.
     #[test]
-    #[cfg(target_os = "macos")]
-    fn test_key_creation() {
-        let config = KeyConfig::new("com.manzana.test.creation");
-        let result = SecureEnclaveSigner::create(config);
-        assert!(result.is_ok(), "Key creation should succeed");
-
-        let signer = result.unwrap();
-        assert_eq!(signer.tag(), "com.manzana.test.creation");
-    }
-
-    #[test]
-    fn test_key_config_builder() {
-        let config = KeyConfig::new("com.example.test")
-            .with_access_control(AccessControl::Biometric)
-            .with_label("Test Key");
-
-        assert_eq!(config.tag, "com.example.test");
-        assert_eq!(config.access_control, AccessControl::Biometric);
-        assert_eq!(config.label, Some("Test Key".to_string()));
-        assert_eq!(config.algorithm, Algorithm::P256);
-    }
-
-    #[test]
-    fn test_key_config_defaults() {
-        let config = KeyConfig::new("test");
-        assert_eq!(config.algorithm, Algorithm::P256);
-        assert_eq!(config.access_control, AccessControl::None);
-        assert!(config.label.is_none());
-    }
-
-    // F064: Key retrieval (load) - returns not found for missing key
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn test_load_nonexistent_key() {
-        let result = SecureEnclaveSigner::load("com.manzana.nonexistent.key");
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(matches!(err, Error::NotFound { .. }));
-    }
-
-    // F065/F066: Signature creation and verification
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn test_sign_and_verify() {
-        let config = KeyConfig::new("com.manzana.test.signing");
-        let signer = SecureEnclaveSigner::create(config).unwrap();
-
-        let data = b"Hello, Secure Enclave!";
-        let signature = signer.sign(data).unwrap();
-
-        // Signature should be valid P-256 length
-        assert!(signature.len() >= 64);
-        assert!(signature.len() <= 72);
-
-        // Verification should succeed
-        let valid = signer.verify(data, &signature).unwrap();
-        assert!(valid, "Signature should verify correctly");
-    }
-
-    // F067: Verification fails for invalid signature
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn test_verify_invalid_signature() {
-        let config = KeyConfig::new("com.manzana.test.invalid");
-        let signer = SecureEnclaveSigner::create(config).unwrap();
-
-        let data = b"Test data";
-
-        // Create a different signature (wrong data)
-        let wrong_sig = signer.sign(b"Different data").unwrap();
-
-        // Verification should fail
-        let valid = signer.verify(data, &wrong_sig).unwrap();
-        assert!(!valid, "Wrong signature should not verify");
-    }
-
-    // F068: Different data produces different signature
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn test_different_data_different_signature() {
-        let config = KeyConfig::new("com.manzana.test.different");
-        let signer = SecureEnclaveSigner::create(config).unwrap();
-
-        let sig1 = signer.sign(b"Data A").unwrap();
-        let sig2 = signer.sign(b"Data B").unwrap();
-
-        assert_ne!(
-            sig1.as_bytes(),
-            sig2.as_bytes(),
-            "Different data should produce different signatures"
+    fn test_create_is_unimplemented_not_fabricated() {
+        let err = SecureEnclaveSigner::create(KeyConfig::new("com.manzana.test.creation"))
+            .expect_err("create() must not manufacture a key");
+        assert!(
+            err.is_unimplemented(),
+            "expected Unimplemented, got {err:?}"
         );
     }
 
-    // F069: Key deletion works
     #[test]
-    #[cfg(target_os = "macos")]
-    fn test_key_deletion() {
-        let config = KeyConfig::new("com.manzana.test.deletion");
-        let signer = SecureEnclaveSigner::create(config).unwrap();
-
-        // Delete should succeed
-        let result = signer.delete();
-        assert!(result.is_ok());
+    fn test_create_rejects_every_tag_including_empty() {
+        // No tag, however well-formed, may yield a signer.
+        for tag in ["", "com.manzana.test", "a", "com.example.app.signing"] {
+            let err = SecureEnclaveSigner::create(KeyConfig::new(tag))
+                .expect_err("create() must never succeed");
+            assert!(err.is_unimplemented(), "tag {tag:?} produced {err:?}");
+        }
     }
 
     #[test]
-    fn test_empty_tag_rejected() {
-        let config = KeyConfig::new("");
-        let result = SecureEnclaveSigner::create(config);
+    fn test_load_is_unimplemented() {
+        let err = SecureEnclaveSigner::load("com.manzana.nonexistent.key")
+            .expect_err("load() must not succeed");
+        assert!(
+            err.is_unimplemented(),
+            "load() must report Unimplemented rather than NotFound, which would \
+             falsely imply a keychain was searched; got {err:?}"
+        );
+        assert!(!matches!(err, Error::NotFound { .. }));
+    }
 
-        #[cfg(target_os = "macos")]
-        assert!(result.is_err(), "Empty tag should be rejected");
-
-        #[cfg(not(target_os = "macos"))]
-        let _ = result;
+    /// The core refutation: no `SecureEnclaveSigner` can be obtained at all,
+    /// so `sign`/`verify`/`delete` are unreachable through the public API.
+    /// If this test ever fails, a construction path has been reintroduced and
+    /// the sign/verify/delete guarantees below must be re-proven.
+    #[test]
+    fn test_no_construction_path_exists() {
+        assert!(SecureEnclaveSigner::create(KeyConfig::new("x")).is_err());
+        assert!(SecureEnclaveSigner::load("x").is_err());
     }
 
     #[test]
-    #[cfg(target_os = "macos")]
-    fn test_sign_empty_data_rejected() {
-        let config = KeyConfig::new("com.manzana.test.empty");
-        let signer = SecureEnclaveSigner::create(config).unwrap();
-
-        let result = signer.sign(b"");
-        assert!(result.is_err(), "Empty data should be rejected");
+    fn test_public_key_rejects_fabricated_stub_key() {
+        // The exact fake key v0.1.0/v0.2.0 produced for tag "test": an
+        // all-zero X coordinate and an all-ones Y coordinate. It is a
+        // well-formed 65-byte uncompressed point, so `PublicKey::from_bytes`
+        // still accepts it structurally -- which is precisely why structural
+        // validation was never enough to catch the defect.
+        let mut fake = vec![0x04];
+        fake.extend_from_slice(&[0u8; 32]);
+        fake.extend_from_slice(&[1u8; 32]);
+        let pk = PublicKey::from_bytes(fake).expect("structurally valid");
+        assert_eq!(pk.as_bytes().len(), 65);
+        // The point is not on the P-256 curve, but manzana does no curve
+        // arithmetic, so it cannot say so. Documented as a known limitation.
     }
 
     #[test]
@@ -692,25 +579,9 @@ mod tests {
         assert_eq!(is_available(), SecureEnclaveSigner::is_available());
     }
 
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn test_signer_debug() {
-        let config = KeyConfig::new("com.manzana.test.debug");
-        let signer = SecureEnclaveSigner::create(config).unwrap();
-
-        let debug = format!("{signer:?}");
-        assert!(debug.contains("SecureEnclaveSigner"));
-        assert!(debug.contains("com.manzana.test.debug"));
-    }
-
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn test_public_key_extraction() {
-        let config = KeyConfig::new("com.manzana.test.pubkey");
-        let signer = SecureEnclaveSigner::create(config).unwrap();
-
-        let pk = signer.public_key();
-        assert_eq!(pk.as_bytes().len(), 65);
-        assert_eq!(pk.as_bytes()[0], 0x04); // Uncompressed format
-    }
+    // `test_signer_debug` and `test_public_key_extraction` were removed: both
+    // obtained a signer from `create()`, which no longer manufactures one.
+    // They are covered by `test_no_construction_path_exists` above, which
+    // asserts the stronger property that no signer can be obtained at all.
+    // They should return alongside a real backend, exercising a genuine key.
 }

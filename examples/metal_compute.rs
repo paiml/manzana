@@ -26,7 +26,7 @@ fn main() -> Result<(), manzana::Error> {
 
     for (i, device) in devices.iter().enumerate() {
         println!("┌─────────────────────────────────────────────────────────────┐");
-        println!("│ GPU {}: {:<52} │", i, &device.name);
+        println!("│ GPU {}: {:<52} │", i, device.name);
         println!("├─────────────────────────────────────────────────────────────┤");
         println!("│ Registry ID: {:<46} │", device.registry_id);
         println!(

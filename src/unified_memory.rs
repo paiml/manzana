@@ -1,33 +1,44 @@
 // This module requires unsafe for memory allocation
 #![allow(unsafe_code)]
 
-//! Unified Memory Architecture (UMA) buffer management.
+//! Page-aligned host buffer management.
 //!
-//! On Apple Silicon, CPU and GPU share the same physical memory,
-//! enabling zero-copy data sharing between processors. This module
-//! provides safe abstractions for managing UMA buffers.
+//! # Scope
+//!
+//! [`UmaBuffer`] is a real, page-aligned heap allocation made with
+//! [`std::alloc::alloc`], with RAII deallocation. That much works and is
+//! tested.
+//!
+//! It is **not** a Metal buffer and it is **not** shared with a GPU. This
+//! module creates no `MTLBuffer`, no `IOSurface`, and makes no Metal or IOKit
+//! call of any kind. On Apple Silicon the CPU and GPU do share physical
+//! memory, but a host allocation only becomes GPU-visible once it is wrapped
+//! (for example via `newBufferWithBytesNoCopy:`), and manzana does not do
+//! that. Page alignment is a *precondition* for such a wrap, not the wrap
+//! itself.
+//!
+//! Earlier documentation claimed the buffer was "accessible to GPU without
+//! copying" and listed a falsification claim "F074: Zero-copy verified".
+//! Nothing verified it, because there was no GPU path to verify.
 //!
 //! # Example
 //!
-//! ```no_run
+//! ```
 //! use manzana::unified_memory::UmaBuffer;
 //!
-//! // Allocate a 1MB buffer
+//! // Allocate a 1 MB page-aligned host buffer.
 //! let mut buffer = UmaBuffer::new(1024 * 1024)?;
 //!
-//! // Write data from CPU
+//! // Write data from the CPU.
 //! let data = buffer.as_mut_slice();
 //! data[0] = 42;
-//!
-//! // Buffer is now accessible to GPU without copying
 //! # Ok::<(), manzana::Error>(())
 //! ```
 //!
 //! # Falsification Claims
 //!
-//! - F071: UMA buffer allocation succeeds
-//! - F074: Zero-copy verified
-//! - F076: Alignment correct for Metal
+//! - F071: Buffer allocation succeeds
+//! - F076: Allocation is page-aligned (a prerequisite for a future Metal wrap)
 
 use crate::error::{Error, Result};
 use std::alloc::{alloc, dealloc, Layout};

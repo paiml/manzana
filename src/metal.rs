@@ -229,22 +229,16 @@ impl MetalCompute {
     }
 
     #[cfg(target_os = "macos")]
+    /// Returns no devices when detection fails.
+    ///
+    /// Earlier versions fabricated a plausible `MetalDevice` here — named
+    /// "Apple GPU", reporting 1024 threads per threadgroup and a 4 GB maximum
+    /// buffer — whenever `system_profiler` was unavailable. That invented a
+    /// GPU on machines that have no Metal at all, including non-macOS hosts.
+    /// Reporting an empty device list is the honest answer to "detection did
+    /// not work".
     fn fallback_device() -> Vec<MetalDevice> {
-        let is_apple_silicon = cfg!(target_arch = "aarch64");
-        vec![MetalDevice {
-            name: if is_apple_silicon {
-                "Apple GPU".to_string()
-            } else {
-                "Unknown GPU".to_string()
-            },
-            registry_id: 1,
-            is_low_power: false,
-            is_headless: false,
-            max_threads_per_threadgroup: 1024,
-            max_buffer_length: 4_294_967_296,
-            has_unified_memory: is_apple_silicon,
-            index: 0,
-        }]
+        Vec::new()
     }
 
     /// Check if any Metal device is available.
@@ -311,27 +305,17 @@ impl MetalCompute {
     ///
     /// # Errors
     ///
-    /// Returns an error if compilation fails.
+    /// Always returns [`Error::Unimplemented`] in this release.
+    ///
+    /// Earlier versions returned a `CompiledShader` whose `source_hash` was a
+    /// 64-bit string hash of the source. Nothing was compiled, so invalid MSL
+    /// was accepted as readily as valid MSL.
     pub fn compile_shader(&self, source: &str, function_name: &str) -> Result<CompiledShader> {
-        // Validate source isn't empty
-        if source.trim().is_empty() {
-            return Err(Error::invalid_input("shader source is empty"));
-        }
-
-        // Validate function name isn't empty
-        if function_name.trim().is_empty() {
-            return Err(Error::invalid_input("function name is empty"));
-        }
-
-        // Simple hash for tracking
-        let source_hash = source.bytes().fold(0u64, |acc, b| {
-            acc.wrapping_mul(31).wrapping_add(u64::from(b))
-        });
-
-        Ok(CompiledShader {
-            name: function_name.to_string(),
-            source_hash,
-        })
+        let _ = (source, function_name);
+        Err(Error::unimplemented(
+            Subsystem::Metal,
+            "shader compilation (requires MTLDevice::newLibraryWithSource)",
+        ))
     }
 
     /// Allocate a buffer on the GPU.
@@ -342,24 +326,17 @@ impl MetalCompute {
     ///
     /// # Errors
     ///
-    /// Returns an error if allocation fails.
+    /// Always returns [`Error::Unimplemented`] in this release.
+    ///
+    /// Earlier versions returned a `MetalBuffer` holding only a length and a
+    /// device index. No GPU memory — and in fact no memory at all — was ever
+    /// allocated, so writes had nowhere to go and reads had nothing to return.
     pub fn allocate_buffer(&self, length: usize) -> Result<MetalBuffer> {
-        if length == 0 {
-            return Err(Error::invalid_input("buffer length cannot be zero"));
-        }
-
-        // Check against device limits (stub)
-        let max_length = 17_179_869_184_usize; // 16 GB
-        if length > max_length {
-            return Err(Error::invalid_input(format!(
-                "buffer length {length} exceeds device limit {max_length}"
-            )));
-        }
-
-        Ok(MetalBuffer {
-            length,
-            device_index: self.device_index,
-        })
+        let _ = length;
+        Err(Error::unimplemented(
+            Subsystem::Metal,
+            "buffer allocation (requires MTLDevice::newBufferWithLength)",
+        ))
     }
 
     /// Dispatch a compute shader.
@@ -373,7 +350,12 @@ impl MetalCompute {
     ///
     /// # Errors
     ///
-    /// Returns an error if dispatch fails.
+    /// Always returns [`Error::Unimplemented`] in this release.
+    ///
+    /// Earlier versions validated the grid and threadgroup arguments and then
+    /// returned `Ok(())` having dispatched nothing. A caller would read its
+    /// output buffer and find whatever was there before — silently wrong
+    /// results rather than a reported failure.
     pub fn dispatch(
         &self,
         shader: &CompiledShader,
@@ -381,29 +363,11 @@ impl MetalCompute {
         grid_size: (u32, u32, u32),
         threadgroup_size: (u32, u32, u32),
     ) -> Result<()> {
-        // Validate grid size
-        if grid_size.0 == 0 || grid_size.1 == 0 || grid_size.2 == 0 {
-            return Err(Error::invalid_input("grid size dimensions cannot be zero"));
-        }
-
-        // Validate threadgroup size
-        let tg_total = threadgroup_size.0 * threadgroup_size.1 * threadgroup_size.2;
-        if tg_total > 1024 {
-            return Err(Error::invalid_input(format!(
-                "threadgroup size {tg_total} exceeds maximum 1024"
-            )));
-        }
-
-        // Validate buffers belong to this device
-        for buffer in buffers {
-            if buffer.device_index != self.device_index {
-                return Err(Error::invalid_input("buffer allocated on different device"));
-            }
-        }
-
-        // Stub: actual dispatch would use Metal command buffer
-        let _ = shader;
-        Ok(())
+        let _ = (shader, buffers, grid_size, threadgroup_size);
+        Err(Error::unimplemented(
+            Subsystem::Metal,
+            "compute dispatch (requires MTLCommandBuffer/MTLComputeCommandEncoder)",
+        ))
     }
 }
 
@@ -417,6 +381,7 @@ pub fn is_available() -> bool {
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
+#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
 
@@ -461,93 +426,73 @@ mod tests {
         assert!(result.is_err());
     }
 
+    // On macOS these now fail if `system_profiler` reports no GPU. That used
+    // to be masked by a fabricated fallback device; a Mac where GPU detection
+    // genuinely does not work is a real finding and should be visible.
     #[test]
     #[cfg(target_os = "macos")]
     fn test_new_valid_index() {
-        let result = MetalCompute::new(0);
-        assert!(result.is_ok());
+        assert!(
+            MetalCompute::new(0).is_ok(),
+            "no Metal device at index 0; `system_profiler SPDisplaysDataType` \
+             returned {} device(s). Detection failure is no longer hidden \
+             behind a fabricated fallback device.",
+            MetalCompute::devices().len()
+        );
     }
 
     #[test]
     #[cfg(target_os = "macos")]
     fn test_default_device() {
-        let result = MetalCompute::default_device();
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn test_compile_shader() {
-        let compute = MetalCompute::default_device().unwrap();
-        let shader = compute.compile_shader(
-            r"
-            kernel void add(device float* a [[buffer(0)]],
-                           device float* b [[buffer(1)]],
-                           uint id [[thread_position_in_grid]]) {
-                a[id] = a[id] + b[id];
-            }
-            ",
-            "add",
+        assert!(
+            MetalCompute::default_device().is_ok(),
+            "no default Metal device; `system_profiler SPDisplaysDataType` \
+             returned {} device(s).",
+            MetalCompute::devices().len()
         );
-        assert!(shader.is_ok());
-        assert_eq!(shader.unwrap().name(), "add");
+    }
+
+    // The compute path must refuse rather than silently drop work.
+    //
+    // These are ungated: the refusal is platform-independent, so they run in
+    // the Linux CI lane too. Previously every compute assertion was behind
+    // `cfg(target_os = "macos")`, leaving nothing to fail by default.
+    #[test]
+    fn test_compile_shader_is_unimplemented() {
+        let Ok(compute) = MetalCompute::default_device() else {
+            return; // No device detected here; the refusal is asserted below anyway.
+        };
+        let err = compute
+            .compile_shader("kernel void add() {}", "add")
+            .expect_err("shader compilation must not report success");
+        assert!(err.is_unimplemented(), "got {err:?}");
     }
 
     #[test]
-    #[cfg(target_os = "macos")]
-    fn test_compile_shader_empty_source() {
-        let compute = MetalCompute::default_device().unwrap();
-        let result = compute.compile_shader("", "test");
-        assert!(result.is_err());
+    fn test_allocate_buffer_is_unimplemented() {
+        let Ok(compute) = MetalCompute::default_device() else {
+            return;
+        };
+        // The removed version returned a MetalBuffer holding only a length,
+        // so this call "succeeded" while allocating nothing at all.
+        let err = compute
+            .allocate_buffer(1024)
+            .expect_err("buffer allocation must not report success");
+        assert!(err.is_unimplemented(), "got {err:?}");
     }
 
     #[test]
-    #[cfg(target_os = "macos")]
-    fn test_compile_shader_empty_name() {
-        let compute = MetalCompute::default_device().unwrap();
-        let result = compute.compile_shader("kernel void test() {}", "");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn test_allocate_buffer() {
-        let compute = MetalCompute::default_device().unwrap();
-        let buffer = compute.allocate_buffer(1024);
-        assert!(buffer.is_ok());
-        let buffer = buffer.unwrap();
-        assert_eq!(buffer.len(), 1024);
-        assert!(!buffer.is_empty());
-    }
-
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn test_allocate_buffer_zero() {
-        let compute = MetalCompute::default_device().unwrap();
-        let result = compute.allocate_buffer(0);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn test_dispatch_invalid_grid() {
-        let compute = MetalCompute::default_device().unwrap();
-        let shader = compute
-            .compile_shader("kernel void test() {}", "test")
-            .unwrap();
-        let result = compute.dispatch(&shader, &[], (0, 1, 1), (1, 1, 1));
-        assert!(result.is_err());
-    }
-
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn test_dispatch_invalid_threadgroup() {
-        let compute = MetalCompute::default_device().unwrap();
-        let shader = compute
-            .compile_shader("kernel void test() {}", "test")
-            .unwrap();
-        let result = compute.dispatch(&shader, &[], (64, 64, 1), (32, 32, 2)); // 2048 > 1024
-        assert!(result.is_err());
+    fn test_no_fabricated_device_when_detection_fails() {
+        // fallback_device() must return no devices rather than inventing an
+        // "Apple GPU". On non-macOS there is no Metal, so the list is empty.
+        #[cfg(not(target_os = "macos"))]
+        {
+            assert!(
+                MetalCompute::devices().is_empty(),
+                "must not fabricate a Metal device on a platform without Metal"
+            );
+            assert!(MetalCompute::default_device().is_err());
+        }
     }
 
     #[test]
@@ -558,7 +503,10 @@ mod tests {
     #[test]
     #[cfg(target_os = "macos")]
     fn test_detect_real_gpus() {
-        // Should detect actual GPUs on Mac via system_profiler
+        // Device enumeration via system_profiler is one of the few genuinely
+        // implemented paths in this module. If it returns nothing, that is a
+        // real detection failure and must be visible, not papered over with a
+        // fabricated fallback device.
         let devices = MetalCompute::devices();
         assert!(!devices.is_empty(), "Should detect at least one GPU");
 

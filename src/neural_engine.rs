@@ -1,30 +1,33 @@
 //! Apple Neural Engine (ANE) inference sessions.
 //!
+//! # ⚠️ INFERENCE IS NOT IMPLEMENTED ⚠️
+//!
+//! This module can detect that an Apple Neural Engine is present. It cannot
+//! load a CoreML model or run inference; those operations return
+//! [`Error::Unimplemented`].
+//!
+//! Versions 0.1.0 and 0.2.0 (both **yanked**) returned
+//! `Tensor::zeros(input.shape)` from [`NeuralEngineSession::infer`] — a
+//! correctly-shaped all-zero tensor, returned silently, indistinguishable from
+//! a model whose real output happened to be zeros. See
+//! `docs/specifications/security-architecture-plan.md`.
+//!
 //! The Apple Neural Engine is a dedicated machine learning accelerator
-//! available on Apple Silicon Macs. It provides up to 15.8 TOPS of
-//! inference performance for compatible CoreML models.
+//! available on Apple Silicon Macs.
 //!
 //! # Example
 //!
-//! ```no_run
+//! ```
 //! use manzana::neural_engine::NeuralEngineSession;
-//! use std::path::Path;
 //!
-//! // Check if ANE is available
-//! if NeuralEngineSession::is_available() {
-//!     println!("Neural Engine detected!");
-//!     if let Some(caps) = NeuralEngineSession::capabilities() {
-//!         println!("Performance: {:.1} TOPS", caps.tops);
-//!     }
-//! }
+//! // Detection is real; inference is not implemented.
+//! let _present = NeuralEngineSession::is_available();
 //! ```
 //!
 //! # Falsification Claims
 //!
 //! - F031: ANE detected on Apple Silicon
 //! - F032: Returns None on Intel Mac
-//! - F033: CoreML model loads successfully
-//! - F040: TOPS matches Apple spec (±10%)
 
 use crate::error::{Error, Result};
 use std::path::Path;
@@ -187,16 +190,22 @@ impl NeuralEngineSession {
 
     /// Query Neural Engine capabilities.
     ///
-    /// Returns `None` if ANE is not available.
+    /// **Always returns `None` in this release.** Capability querying is not
+    /// implemented.
+    ///
+    /// Earlier versions returned [`AneCapabilities::default`] — the M1
+    /// baseline of 15.8 TOPS and 16 cores — on *every* Apple Silicon machine,
+    /// with `chip_generation` left as the literal string `"Unknown"`. Those
+    /// were published specification figures for one chip, presented as though
+    /// they had been read from the device in front of the caller. A program
+    /// sizing a workload from them would be wrong on every chip but an M1.
+    ///
+    /// [`AneCapabilities::default`] remains available for callers who
+    /// deliberately want the documented M1 baseline as a placeholder.
     #[must_use]
+    #[allow(clippy::missing_const_for_fn)]
     pub fn capabilities() -> Option<AneCapabilities> {
-        if !Self::is_available() {
-            return None;
-        }
-
-        // Return baseline M1 capabilities
-        // In a full implementation, this would query actual hardware
-        Some(AneCapabilities::default())
+        None
     }
 
     /// Load a CoreML model for inference.
@@ -214,38 +223,35 @@ impl NeuralEngineSession {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```
     /// use manzana::neural_engine::NeuralEngineSession;
     /// use std::path::Path;
     ///
-    /// let session = NeuralEngineSession::load(Path::new("model.mlmodelc"))?;
-    /// # Ok::<(), manzana::Error>(())
+    /// let err = NeuralEngineSession::load(Path::new("model.mlmodelc"))
+    ///     .expect_err("CoreML model loading is not implemented");
+    /// assert!(err.is_unimplemented());
     /// ```
     pub fn load(model_path: &Path) -> Result<Self> {
-        // Validate path exists
-        if !model_path.exists() {
-            return Err(Error::not_found(format!(
-                "model file: {}",
-                model_path.display()
-            )));
-        }
-
-        // Validate extension
+        // Report obviously-wrong input as such; a caller passing a .txt file
+        // has a different bug from a caller hitting the unimplemented backend.
         let ext = model_path
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("");
-
         if ext != "mlmodel" && ext != "mlmodelc" {
             return Err(Error::invalid_input(format!(
                 "unsupported model format: .{ext} (expected .mlmodel or .mlmodelc)"
             )));
         }
 
-        Ok(Self {
-            model_path: model_path.to_string_lossy().into_owned(),
-            _not_send_sync: std::marker::PhantomData,
-        })
+        // Earlier versions returned a session here after checking only that the
+        // path existed and had the right extension. The file was never opened,
+        // let alone parsed or compiled, so "model loaded successfully" was a
+        // statement about a filename.
+        Err(Error::unimplemented(
+            crate::error::Subsystem::NeuralEngine,
+            "CoreML model loading (requires MLModel compileModelAtURL)",
+        ))
     }
 
     /// Run inference on the loaded model.
@@ -256,19 +262,19 @@ impl NeuralEngineSession {
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - Input shape doesn't match model requirements
-    /// - Inference fails
+    /// Always returns [`Error::Unimplemented`] in this release. No CoreML
+    /// backend exists, and this function will not fabricate an output tensor.
     ///
-    /// # Note
-    ///
-    /// This is a stub implementation. Full implementation requires
-    /// CoreML framework bindings.
+    /// Earlier versions returned `Tensor::zeros(input.shape)` — an
+    /// all-zero tensor of the right shape, silently, as if the model had run.
+    /// A caller had no way to distinguish that from a model whose genuine
+    /// output happened to be zeros.
     pub fn infer(&self, input: &Tensor) -> Result<Tensor> {
-        // Stub: return zeros with same shape as input
-        // Full implementation would use CoreML framework
-        let _ = &self.model_path; // Suppress unused warning
-        Ok(Tensor::zeros(input.shape.clone()))
+        let _ = input;
+        Err(Error::unimplemented(
+            crate::error::Subsystem::NeuralEngine,
+            "inference (requires CoreML MLModel prediction)",
+        ))
     }
 
     /// Get the model path.
@@ -289,6 +295,7 @@ pub fn is_available() -> bool {
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
+#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
 
@@ -302,18 +309,24 @@ mod tests {
     }
 
     #[test]
-    fn test_capabilities_consistent_with_available() {
-        let available = NeuralEngineSession::is_available();
-        let caps = NeuralEngineSession::capabilities();
+    fn test_capabilities_never_fabricates_device_specs() {
+        // Must be None on every platform: earlier versions returned the M1
+        // baseline (15.8 TOPS, 16 cores) on any Apple Silicon chip, which is
+        // a published figure for one device presented as a measurement of
+        // whichever device the caller happens to be running on.
+        assert!(
+            NeuralEngineSession::capabilities().is_none(),
+            "capability querying is not implemented; it must not guess"
+        );
+    }
 
-        if available {
-            assert!(caps.is_some(), "Should have capabilities when available");
-        } else {
-            assert!(
-                caps.is_none(),
-                "Should not have capabilities when unavailable"
-            );
-        }
+    #[test]
+    fn test_capabilities_legacy_shape_still_available_as_placeholder() {
+        // AneCapabilities::default() remains for callers who explicitly want
+        // the documented M1 baseline. That is fine: they asked for a constant.
+        let baseline = AneCapabilities::default();
+        assert!((baseline.tops - 15.8).abs() < f64::EPSILON);
+        assert_eq!(baseline.chip_generation, "Unknown");
     }
 
     #[test]
@@ -356,11 +369,28 @@ mod tests {
     }
 
     #[test]
-    fn test_load_nonexistent_model() {
-        let result = NeuralEngineSession::load(Path::new("/nonexistent/model.mlmodel"));
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(matches!(err, Error::NotFound { .. }));
+    fn test_load_is_unimplemented_not_fabricated() {
+        // A well-formed path with a valid extension must still refuse: the
+        // model is never opened, so reporting a loaded session would be a
+        // statement about the filename, not the model.
+        let err = NeuralEngineSession::load(Path::new("/nonexistent/model.mlmodel"))
+            .expect_err("model loading is not implemented");
+        assert!(err.is_unimplemented(), "got {err:?}");
+    }
+
+    #[test]
+    fn test_load_rejects_bad_extension_distinctly() {
+        let err = NeuralEngineSession::load(Path::new("notes.txt"))
+            .expect_err("wrong extension must be rejected");
+        assert!(matches!(err, Error::InvalidInput { .. }), "got {err:?}");
+    }
+
+    #[test]
+    fn test_infer_refuses_rather_than_returning_zeros() {
+        // Guards the specific defect: infer() must not return a shaped
+        // all-zero tensor that a caller could mistake for a real result.
+        // No session can be constructed, so the refusal is enforced upstream.
+        assert!(NeuralEngineSession::load(Path::new("model.mlmodelc")).is_err());
     }
 
     #[test]

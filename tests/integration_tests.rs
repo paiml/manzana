@@ -185,61 +185,49 @@ fn test_f017_graceful_degradation_on_missing_hardware() {
 // Secure Enclave API tests (F061-F070)
 // =============================================================================
 
-// F061: Secure Enclave detected on T2/Apple Silicon
+// F061: Secure Enclave capability is reported honestly on every platform.
 #[test]
-fn test_f061_secure_enclave_detection() {
-    let available = SecureEnclaveSigner::is_available();
-    #[cfg(target_os = "macos")]
-    assert!(available, "Secure Enclave should be available on macOS");
-    #[cfg(not(target_os = "macos"))]
+fn test_f061_secure_enclave_capability_is_false() {
     assert!(
-        !available,
-        "Secure Enclave should not be available on non-macOS"
+        !SecureEnclaveSigner::is_available(),
+        "no Secure Enclave backend is implemented, so is_available() must be false"
     );
 }
 
-// F063: Key creation succeeds
+// F063: Key creation must NOT succeed -- it must refuse rather than fabricate.
+//
+// These tests are intentionally ungated. Gating the cryptographic surface on
+// `target_os = "macos"` is what let the fabricated implementations ship: the
+// Linux matrix was empty, so nothing here could ever fail in the default CI lane.
 #[test]
-#[cfg(target_os = "macos")]
-fn test_f063_key_creation() {
-    let config = KeyConfig::new("com.manzana.integration.test");
-    let result = SecureEnclaveSigner::create(config);
-    assert!(result.is_ok(), "Key creation should succeed on macOS");
+fn test_f063_key_creation_refuses() {
+    let err = SecureEnclaveSigner::create(KeyConfig::new("com.manzana.integration.test"))
+        .expect_err("key creation must not succeed without a real backend");
+    assert!(err.is_unimplemented(), "got {err:?}");
 }
 
-// F065/F066: Signature validity
+// F065/F066: No signature can be produced at all, so no roundtrip can exist.
 #[test]
-#[cfg(target_os = "macos")]
-fn test_f065_f066_signature_roundtrip() {
-    let config = KeyConfig::new("com.manzana.integration.signing");
-    let signer = SecureEnclaveSigner::create(config).expect("Key creation failed");
-
-    let data = b"Integration test data for signing";
-    let signature = signer.sign(data).expect("Signing failed");
-
-    // Verify signature is valid P-256 DER format (64-72 bytes)
-    assert!(signature.len() >= 64 && signature.len() <= 72);
-
-    // Verify roundtrip
-    let valid = signer
-        .verify(data, &signature)
-        .expect("Verification failed");
-    assert!(valid, "Signature should verify correctly");
+fn test_f065_f066_no_signature_can_be_produced() {
+    // The only way to reach sign() is through a signer, and no signer can be
+    // constructed. Both doors are checked here.
+    assert!(
+        SecureEnclaveSigner::create(KeyConfig::new("com.manzana.integration.signing")).is_err()
+    );
+    assert!(SecureEnclaveSigner::load("com.manzana.integration.signing").is_err());
 }
 
-// F067: Invalid signature rejected
+// F067: Verification cannot report a boolean it has no basis for.
+//
+// The removed implementation answered `Ok(true)`/`Ok(false)` by re-deriving a
+// deterministic fake and comparing bytes. A verifier that cannot check a
+// signature must return an error, never `Ok(false)` -- callers routinely treat
+// `Ok(false)` as "definitively invalid", which was never true here.
 #[test]
-#[cfg(target_os = "macos")]
-fn test_f067_invalid_signature_rejected() {
-    let config = KeyConfig::new("com.manzana.integration.verify");
-    let signer = SecureEnclaveSigner::create(config).expect("Key creation failed");
-
-    let sig1 = signer.sign(b"Data A").expect("Signing failed");
-    let valid = signer
-        .verify(b"Data B", &sig1)
-        .expect("Verification failed");
-
-    assert!(!valid, "Signature for different data should not verify");
+fn test_f067_verification_cannot_be_reached() {
+    let err = SecureEnclaveSigner::create(KeyConfig::new("com.manzana.integration.verify"))
+        .expect_err("no signer, therefore no verification path");
+    assert!(err.is_unimplemented(), "got {err:?}");
 }
 
 #[test]
@@ -295,18 +283,22 @@ fn test_f047_device_properties() {
     }
 }
 
-// F060: Threadgroup size limits enforced
+// F060: The Metal compute path refuses rather than silently dropping work.
 #[test]
 #[cfg(target_os = "macos")]
-fn test_f060_threadgroup_limits() {
-    let compute = MetalCompute::default_device().expect("No Metal device");
-    let shader = compute
+fn test_f060_compute_path_refuses() {
+    let Ok(compute) = MetalCompute::default_device() else {
+        return; // No Metal device on this runner; nothing to assert.
+    };
+    let err = compute
         .compile_shader("kernel void test() {}", "test")
-        .expect("Shader compilation failed");
+        .expect_err("shader compilation is not implemented");
+    assert!(err.is_unimplemented(), "got {err:?}");
 
-    // Exceed max threadgroup size (1024)
-    let result = compute.dispatch(&shader, &[], (1, 1, 1), (33, 33, 1)); // 1089 > 1024
-    assert!(result.is_err(), "Should reject oversized threadgroup");
+    let err = compute
+        .allocate_buffer(1024)
+        .expect_err("buffer allocation is not implemented");
+    assert!(err.is_unimplemented(), "got {err:?}");
 }
 
 // =============================================================================

@@ -12,19 +12,47 @@
   <a href="https://crates.io/crates/manzana"><img src="https://img.shields.io/crates/v/manzana.svg" alt="Crates.io"></a>
   <a href="https://docs.rs/manzana"><img src="https://docs.rs/manzana/badge.svg" alt="Documentation"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
-  <a href="https://github.com/paiml/manzana"><img src="https://img.shields.io/badge/tests-174%20passing-green.svg" alt="Tests"></a>
 </p>
 
 </div>
 
 ---
 
+## ⚠️ Security Notice — read before depending on this crate
+
+**Manzana does not implement cryptography. Do not use it for signing, verification, key management, or attestation.**
+
+Versions **0.1.0 and 0.2.0 have been yanked** from crates.io. Their
+`secure_enclave` module advertised hardware-backed P-256 ECDSA signing but was
+entirely stubbed:
+
+- `create()` returned a fixed public key derived from a byte-sum of the key tag. No key was ever generated.
+- `sign()` returned a DER-shaped value whose `r` was 32 copies of a byte-sum of the message and whose `s` was 32 copies of a byte-sum of the tag — roughly 8 bits of entropy per half.
+- `verify()` recomputed that same value and compared bytes, so it accepted forgeries from anyone who knew the tag.
+- `delete()` reported success without deleting anything.
+
+The same pattern appeared elsewhere: `neural_engine::infer()` returned a
+correctly-shaped all-zero tensor, and `metal::dispatch()` returned `Ok(())`
+having dispatched nothing.
+
+**As of 0.3.0 every one of those operations returns `Error::Unimplemented`
+instead of a fabricated value.** Nothing in this crate will hand you a result
+that looks real but is not.
+
+For real Secure Enclave and Keychain access, use
+[`security-framework`](https://crates.io/crates/security-framework).
+
+Reported in [#3](https://github.com/paiml/manzana/issues/3). Full analysis and
+remediation plan: [`docs/specifications/security-architecture-plan.md`](docs/specifications/security-architecture-plan.md).
+
+---
+
 ## Table of Contents
 
 - [Overview](#overview)
-- [Features](#features)
+- [What actually works](#what-actually-works)
 - [Installation](#installation)
-- [Quick Start](#quick-start)
+- [Usage](#usage)
 - [Examples](#examples)
 - [Safety Architecture](#safety-architecture)
 - [Contributing](#contributing)
@@ -32,35 +60,54 @@
 
 ## Overview
 
-Manzana (Spanish: "apple") provides **safe, pure Rust interfaces** to Apple hardware subsystems for the Sovereign AI Stack. It enables on-premise, privacy-preserving machine learning workloads on macOS by exposing Apple-specific accelerators through memory-safe abstractions.
+Manzana provides safe Rust interfaces to Apple hardware subsystems on macOS.
+Today it is primarily a **hardware discovery** library: it can tell you what
+accelerators are present. The compute and cryptographic paths are not
+implemented.
 
-## Features
+## What actually works
 
-- **Afterburner FPGA** -- Mac Pro ProRes decode acceleration (23x 4K streams)
-- **Neural Engine** -- Apple Silicon CoreML inference at 15.8+ TOPS
-- **Metal GPU** -- General-purpose GPU compute with multi-GPU support
-- **Secure Enclave** -- P-256 ECDSA signing with hardware-bound keys
-- **Unified Memory** -- Zero-copy CPU/GPU data sharing for ML tensors
-- **100% Safe Public API** -- All unsafe code quarantined in audited FFI layer
-- **Property-based Testing** -- 174 tests including proptest and chaos testing
+Every row is the current state, not a roadmap. "Not implemented" means the
+function returns `Error::Unimplemented` — it does not return a guess.
+
+| Capability | Module | Status |
+|---|---|---|
+| Metal GPU enumeration (name, VRAM, limits) | `metal` | **Implemented** — via `system_profiler` |
+| Afterburner presence + stats | `afterburner` | **Implemented** — via IOKit |
+| Apple Silicon / ANE presence | `neural_engine` | **Implemented** — compile-time target check |
+| Page-aligned host buffer allocation | `unified_memory` | **Implemented** — real allocation, RAII |
+| Metal shader compilation, buffer allocation, dispatch | `metal` | **Not implemented** |
+| CoreML model loading and inference | `neural_engine` | **Not implemented** |
+| ANE capability querying (TOPS, cores) | `neural_engine` | **Not implemented** |
+| Secure Enclave key creation, signing, verification, deletion | `secure_enclave` | **Not implemented** |
+| Secure Enclave hardware detection | `secure_enclave` | **Not implemented** |
+| GPU-shared / zero-copy buffers | `unified_memory` | **Not implemented** |
+
+Notes on the implemented rows:
+
+- `unified_memory::UmaBuffer` is a page-aligned **host** allocation. It is not
+  a `MTLBuffer`, is not wrapped with `newBufferWithBytesNoCopy:`, and is not
+  visible to a GPU. Page alignment is a prerequisite for that wrap, not the
+  wrap itself.
+- Metal enumeration shells out to `system_profiler`. If detection fails it
+  returns an empty list rather than inventing a device.
 
 ## Supported Hardware
+
+Detection only — see the table above for what can be done with each.
 
 | Accelerator | Module | Mac Pro | Apple Silicon | Intel Mac |
 |-------------|--------|---------|---------------|-----------|
 | Afterburner FPGA | `afterburner` | ✓ | - | - |
 | Neural Engine | `neural_engine` | - | ✓ | - |
 | Metal GPU | `metal` | ✓ | ✓ | ✓ |
-| Secure Enclave | `secure_enclave` | T2 | ✓ | T2 |
 | Unified Memory | `unified_memory` | - | ✓ | - |
 
 ## Installation
 
-Add to your `Cargo.toml`:
-
 ```toml
 [target.'cfg(target_os = "macos")'.dependencies]
-manzana = "0.1"
+manzana = "0.3"
 ```
 
 ### Feature Flags
@@ -75,217 +122,127 @@ secure-enclave = []   # Secure Enclave signing
 full = ["afterburner", "neural-engine", "metal", "secure-enclave"]
 ```
 
-## Quick Start
+> **Note:** these flags are currently declared but gate nothing — no `#[cfg(feature = ...)]`
+> exists in `src/`, so every module is compiled regardless of which features you
+> enable. Wiring them up is tracked in the security architecture plan.
 
-### Hardware Discovery
+## Usage
+
+### Hardware discovery
 
 ```rust
 use manzana::{
     afterburner::AfterburnerMonitor,
     metal::MetalCompute,
     neural_engine::NeuralEngineSession,
-    secure_enclave::SecureEnclaveSigner,
 };
 
 fn main() {
-    // Check available accelerators
-    println!("Afterburner: {}", AfterburnerMonitor::is_available());
+    println!("Afterburner:   {}", AfterburnerMonitor::is_available());
     println!("Neural Engine: {}", NeuralEngineSession::is_available());
-    println!("Metal GPU: {}", MetalCompute::is_available());
-    println!("Secure Enclave: {}", SecureEnclaveSigner::is_available());
-}
-```
+    println!("Metal GPU:     {}", MetalCompute::is_available());
 
-### Secure Enclave Signing
-
-```rust
-use manzana::secure_enclave::{SecureEnclaveSigner, KeyConfig, AccessControl};
-
-fn sign_data() -> manzana::Result<()> {
-    // Create a signing key in Secure Enclave
-    let config = KeyConfig::new("com.myapp.signing")
-        .with_access_control(AccessControl::None)
-        .with_label("My Signing Key");
-
-    let signer = SecureEnclaveSigner::create(config)?;
-
-    // Sign data (P-256 ECDSA)
-    let message = b"Hello, Sovereign AI!";
-    let signature = signer.sign(message)?;
-
-    // Verify
-    let valid = signer.verify(message, &signature)?;
-    assert!(valid);
-
-    Ok(())
-}
-```
-
-### Metal GPU Compute
-
-```rust
-use manzana::metal::MetalCompute;
-
-fn gpu_compute() -> manzana::Result<()> {
-    // Enumerate Metal devices
-    let devices = MetalCompute::devices();
-    for device in &devices {
+    for device in MetalCompute::devices() {
         println!("GPU: {} ({:.1} GB VRAM)", device.name, device.vram_gb());
     }
+}
+```
 
-    // Create compute pipeline
-    let compute = MetalCompute::default_device()?;
+### Page-aligned host buffers
 
-    // Compile shader
-    let shader = compute.compile_shader(r"
-        kernel void vector_add(
-            device float* a [[buffer(0)]],
-            device float* b [[buffer(1)]],
-            device float* result [[buffer(2)]],
-            uint id [[thread_position_in_grid]]
-        ) {
-            result[id] = a[id] + b[id];
-        }
-    ", "vector_add")?;
+```rust
+use manzana::unified_memory::UmaBuffer;
 
-    // Allocate buffers and dispatch
-    let buffer_a = compute.allocate_buffer(1024)?;
-    let buffer_b = compute.allocate_buffer(1024)?;
-    let buffer_result = compute.allocate_buffer(1024)?;
-
-    compute.dispatch(&shader, &[&buffer_a, &buffer_b, &buffer_result], (256, 1, 1), (4, 1, 1))?;
-
+fn buffers() -> manzana::Result<()> {
+    let mut buffer = UmaBuffer::new(1024 * 1024)?;
+    buffer.as_mut_slice()[0] = 42;
+    assert!(buffer.is_aligned());
     Ok(())
 }
 ```
 
-### Neural Engine Inference
+### Handling unimplemented operations
+
+Operations that cannot reach real hardware fail rather than guess. Callers can
+detect this specifically:
 
 ```rust
-use manzana::neural_engine::NeuralEngineSession;
+use manzana::secure_enclave::{SecureEnclaveSigner, KeyConfig};
 
-fn neural_inference() -> manzana::Result<()> {
-    if NeuralEngineSession::is_available() {
-        if let Some(caps) = NeuralEngineSession::capabilities() {
-            println!("Neural Engine: {:.1} TOPS, {} cores", caps.tops, caps.core_count);
-        }
-    }
-    Ok(())
-}
+let err = SecureEnclaveSigner::create(KeyConfig::new("com.example.signing"))
+    .expect_err("Secure Enclave support is not implemented");
+assert!(err.is_unimplemented());
 ```
 
 ## Examples
 
-Run the included examples:
-
 ```bash
-# Discover all available Apple hardware
-cargo run --example hardware_discovery
-
-# Secure Enclave P-256 ECDSA signing demo
-cargo run --example secure_signing
-
-# Metal GPU compute demo
-cargo run --example metal_compute
+cargo run --example hardware_discovery   # Discover available Apple hardware
+cargo run --example secure_signing       # Report Secure Enclave status (no signing)
+cargo run --example metal_compute        # Enumerate Metal devices
 ```
 
 ## Safety Architecture
 
-Manzana follows a strict safety architecture with all unsafe code quarantined in the FFI layer:
+The public API is safe Rust. `#![deny(unsafe_code)]` is set at the crate root,
+with overrides in two places:
 
 ```
-+-------------------------------------------------------------+
-|                  PUBLIC API (100% Safe Rust)                |
-|  #![deny(unsafe_code)]                                      |
-|                                                             |
-|  +-------------+ +-------------+ +-------------+ +---------+|
-|  | Afterburner | |NeuralEngine | |   Metal     | | Secure  ||
-|  |   Monitor   | |   Session   | |  Compute    | | Enclave ||
-|  +------+------+ +------+------+ +------+------+ +----+----+|
-+---------+---------------+---------------+-----------+-------+
-          |               |               |           |
-          v               v               v           v
-  +-----------------------------------------------------------+
-  |                  FFI QUARANTINE ZONE                      |
-  |  #![allow(unsafe_code)] - Audited, MIRI-verified          |
-  |  src/ffi/iokit.rs | src/ffi/security.rs                   |
-  +-----------------------------------------------------------+
-+---------+---------------+---------------+-----------+-------+
-|                   macOS KERNEL / FRAMEWORKS                 |
-|  IOKit.framework | CoreML.framework | Metal | Security      |
-+-------------------------------------------------------------+
+src/ffi/iokit.rs        Real FFI. extern "C" bindings to IOServiceMatching,
+                        IORegistryEntryCreateCFProperties and friends, each
+                        unsafe block carrying a // SAFETY: justification.
+                        This is what backs Afterburner detection and stats.
+src/ffi/security.rs     No FFI. Declares type aliases and an OSStatus mapping
+                        only -- no extern "C" block, no unsafe operation. Its
+                        allow(unsafe_code) is reserved for the real bindings.
+src/unified_memory.rs   Carries its own #![allow(unsafe_code)] for the
+                        page-aligned allocation and its RAII Drop.
 ```
 
-## Quality Metrics
+Unsafe code is therefore **not** confined to `src/ffi/`, contrary to earlier
+versions of this document. Earlier versions also described the FFI layer as
+"MIRI-verified"; the `make miri` target behind that claim suppressed its own
+failures and could not fail. Both the target and the claim have been corrected.
+
+## Quality
 
 | Metric | Value |
 |--------|-------|
-| Tests | 174 passing |
-| Clippy | 0 warnings (pedantic + nursery) |
-| Unsafe Code | FFI quarantine only |
-| Documentation | 100% public API |
+| Tests | 153 on Linux; more on macOS, where platform-gated tests also run |
+| Clippy | 0 warnings (pedantic + nursery, `--all-targets`) |
+| Unsafe code | `src/ffi/iokit.rs` (real IOKit FFI) and `src/unified_memory.rs` |
 
-## Use Cases
-
-1. **Afterburner FPGA** (Mac Pro 2019+)
-   - ProRes video decode acceleration for ML training data pipelines
-   - 23x 4K streams or 6x 8K streams simultaneous decode
-   - Real-time stream monitoring via `AfterburnerMonitor`
-
-2. **Neural Engine** (Apple Silicon)
-   - CoreML model inference at 15.8+ TOPS
-   - Zero-copy with Unified Memory Architecture
-   - Privacy-preserving on-device inference
-
-3. **Metal GPU** (All Macs)
-   - General-purpose GPU compute
-   - Multi-GPU support (Mac Pro dual GPUs)
-   - SIMD acceleration
-
-4. **Secure Enclave** (T2/Apple Silicon)
-   - P-256 ECDSA signing for model attestation
-   - Hardware-bound keys (non-extractable)
-   - Biometric authentication support (Touch ID/Face ID)
-
-5. **Unified Memory** (Apple Silicon)
-   - Zero-copy CPU/GPU data sharing
-   - Page-aligned buffers for Metal
-   - Efficient ML tensor management
+Test counts are platform-dependent because some tests are gated on
+`target_os`. The security-critical assertions are deliberately **ungated** —
+gating the entire cryptographic surface behind `target_os = "macos"` is what
+allowed the stubbed implementations to ship with a green Linux CI lane.
 
 ## Part of the Sovereign AI Stack
 
-Manzana is part of the [Batuta](https://github.com/paiml/batuta) Sovereign AI orchestration stack:
-
-```
-+---------------------------------------------------------------------+
-|                      BATUTA ORCHESTRATION                           |
-|                                                                     |
-|  +----------+  +----------+  +----------+  +----------------------+ |
-|  | realizar |  | repartir |  | entrenar |  |      manzana         | |
-|  | (exec)   |  | (sched)  |  | (train)  |  |  (Apple hardware)    | |
-|  +----+-----+  +----+-----+  +----+-----+  +----------+-----------+ |
-|       |             |             |                   |             |
-|       +-------------+-------------+-------------------+             |
-|                           |                                         |
-|                    +------v------+                                  |
-|                    |   trueno    |                                  |
-|                    |  (compute)  |                                  |
-|                    +-------------+                                  |
-+---------------------------------------------------------------------+
-```
+Manzana is part of the Sovereign AI stack orchestrated by
+[aprender](https://github.com/paiml/aprender). Orchestration formerly lived in
+the separate `batuta` repository, which has been archived and merged into the
+aprender monorepo as `crates/aprender-orchestrate`.
 
 ## Contributing
 
-Contributions are welcome. Please open an issue or pull request on [GitHub](https://github.com/paiml/manzana).
+Contributions are welcome. Please open an issue or pull request on
+[GitHub](https://github.com/paiml/manzana).
 
 1. Fork the repository
 2. Create your feature branch
 3. Run `make tier2` to validate
 4. Submit a pull request
 
-## See Also
+**A function must never return a fabricated value.** If an operation cannot
+reach the hardware it claims to use, it returns `Error::Unimplemented`. A
+plausible-looking placeholder is worse than an error, because a caller cannot
+tell it apart from a real result.
 
-- [Cookbook](examples/) — 3 runnable examples
+## Security
+
+To report a security issue, open an issue on
+[GitHub](https://github.com/paiml/manzana/issues) or contact the maintainers.
 
 ## License
 
@@ -297,4 +254,4 @@ MIT License - see [LICENSE](LICENSE) for details.
 - [Apple Neural Engine](https://machinelearning.apple.com/research/neural-engine-transformers)
 - [Metal Framework](https://developer.apple.com/metal/)
 - [Secure Enclave](https://support.apple.com/guide/security/secure-enclave-sec59b0b31ff/web)
-- [Unified Memory Architecture](https://developer.apple.com/documentation/metal/resource_fundamentals/choosing_a_resource_storage_mode_for_apple_gpus)
+- [`security-framework` crate](https://crates.io/crates/security-framework) — for real Secure Enclave access
