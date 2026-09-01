@@ -251,6 +251,17 @@ tell it apart from a real result.
 To report a security issue, open an issue on
 [GitHub](https://github.com/paiml/manzana/issues) or contact the maintainers.
 
+### Acknowledgements
+
+The stubbed-cryptography defect was reported by
+[@ZephyrCodesStuff](https://github.com/ZephyrCodesStuff) in
+[issue #3](https://github.com/paiml/manzana/issues/3), and corroborated by
+[@djc](https://github.com/djc). Both were right, and the crate is better for
+it. RUSTSEC-2026-0273 was filed on the strength of that report.
+
+See [CHANGELOG.md](CHANGELOG.md) for the full record of what was wrong and
+what changed.
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.

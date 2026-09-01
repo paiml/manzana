@@ -2,15 +2,18 @@
 //!
 //! # Safety Architecture
 //!
-//! This module contains ALL unsafe code in the manzana crate. The public API
-//! in `src/lib.rs` uses `#![forbid(unsafe_code)]`, ensuring no unsafe code
-//! can leak into the user-facing interface.
+//! This module contains most, but not all, of the unsafe code in manzana:
+//! `src/unified_memory.rs` carries its own `#![allow(unsafe_code)]` for its
+//! page-aligned allocation and RAII `Drop`. The crate root uses
+//! `#![deny(unsafe_code)]` -- `deny`, not `forbid`, precisely because those
+//! two overrides exist. Earlier revisions of this file claimed otherwise.
 //!
 //! ## Design Principles (Iron Lotus Framework)
 //!
 //! - **Poka-Yoke**: Type-safe wrappers prevent misuse at compile time
 //! - **Jidoka**: All unsafe blocks have SAFETY comments
-//! - **Genchi Genbutsu**: Direct hardware queries, no simulation
+//! - **Genchi Genbutsu**: Direct hardware queries, no simulation. This holds
+//!   for `iokit.rs`; `security.rs` currently binds nothing at all.
 //!
 //! ## Safety Rules (from specification S1-S6)
 //!

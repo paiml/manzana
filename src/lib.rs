@@ -7,17 +7,22 @@
 //! # Design Philosophy
 //!
 //! - **Iron Lotus Framework**: Toyota Production System principles applied to systems programming
-//! - **Popperian Falsification**: 100-point scientific rigor checklist
-//! - **Zero unsafe in public API**: All FFI quarantined in internal modules
+//! - **Safe public API**: `#![deny(unsafe_code)]`, overridden only in
+//!   `src/ffi/` and `src/unified_memory.rs`
 //!
-//! # Supported Hardware
+//! # Hardware support
 //!
-//! | Hardware | Module | Mac Pro | Apple Silicon | Intel Mac |
-//! |----------|--------|---------|---------------|-----------|
-//! | Afterburner FPGA | [`afterburner`] | Yes | No | No |
-//! | Neural Engine | `neural_engine` | No | Yes | No |
-//! | Metal GPU | `metal` | Yes | Yes | Yes |
-//! | Secure Enclave | `secure_enclave` | T2/AS | Yes | T2 only |
+//! Presence detection is implemented for the rows below. What you can *do*
+//! with each is a separate question -- see the capability table in the README.
+//! Operations that are not implemented return [`Error::Unimplemented`] rather
+//! than a fabricated result.
+//!
+//! | Hardware | Module | Detection | Operations |
+//! |----------|--------|-----------|------------|
+//! | Afterburner FPGA | [`afterburner`] | Yes (IOKit) | Stats implemented |
+//! | Metal GPU | `metal` | Yes (`system_profiler`) | Compute not implemented |
+//! | Neural Engine | `neural_engine` | Build-target only | Inference not implemented |
+//! | Secure Enclave | `secure_enclave` | Delegated to `security-framework` | See module docs |
 //!
 //! # Quick Start
 //!
@@ -45,7 +50,8 @@
 //!
 //! # Safety Guarantees
 //!
-//! This crate uses `#![forbid(unsafe_code)]` at the library level. All FFI
+//! This crate uses `#![deny(unsafe_code)]` at the library level (not
+//! `forbid`, which could not be overridden). All FFI
 //! code is quarantined in the internal `ffi` module, which is not exported.
 //!
 //! # Error Handling

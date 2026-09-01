@@ -299,10 +299,10 @@ impl SecureEnclaveSigner {
     ///     .expect_err("not implemented");
     /// assert!(err.is_unimplemented());
     /// ```
-    #[allow(
-        clippy::needless_pass_by_value,
-        reason = "the signature is the intended one; a real backend consumes the config"
-    )]
+    // Taken by value deliberately: a real backend consumes the config.
+    // (No `reason = ` here -- that lint-attribute field needs Rust 1.81 and
+    // this crate's MSRV is 1.75.)
+    #[allow(clippy::needless_pass_by_value)]
     pub fn create(config: KeyConfig) -> Result<Self> {
         drop(config);
         Err(Error::unimplemented(

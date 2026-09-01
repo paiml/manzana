@@ -41,7 +41,7 @@
 //! - F076: Allocation is page-aligned (a prerequisite for a future Metal wrap)
 
 use crate::error::{Error, Result};
-use std::alloc::{alloc, dealloc, Layout};
+use std::alloc::{alloc_zeroed, dealloc, Layout};
 use std::ptr::NonNull;
 
 /// Page size for Metal buffer alignment (4096 bytes).
@@ -118,9 +118,21 @@ impl UmaBuffer {
         let layout = Layout::from_size_align(aligned_len, PAGE_SIZE)
             .map_err(|e| Error::internal(format!("invalid layout: {e}")))?;
 
-        // Allocate memory
-        // SAFETY: layout is valid (checked above), size > 0
-        let ptr = unsafe { alloc(layout) };
+        // SAFETY: layout is valid (checked above) and its size is non-zero,
+        // since `len >= 1` and `aligned_len` rounds up.
+        //
+        // `alloc_zeroed`, not `alloc`: `as_slice` and `as_mut_slice` are SAFE
+        // public methods that build a `&[u8]` over this allocation. Producing a
+        // reference to uninitialized memory is undefined behaviour, so with a
+        // plain `alloc` the sequence
+        //
+        //     let b = UmaBuffer::new(1024)?;   // safe
+        //     let _ = b.as_slice()[0];         // safe -> UB
+        //
+        // was unsound from entirely safe code. Zeroing on allocation makes the
+        // buffer initialized before any reference to it can exist. The OS
+        // generally hands back pre-zeroed pages, so this is close to free.
+        let ptr = unsafe { alloc_zeroed(layout) };
 
         let ptr = NonNull::new(ptr).ok_or_else(|| {
             Error::internal(format!("memory allocation failed for {aligned_len} bytes"))
@@ -131,8 +143,8 @@ impl UmaBuffer {
 
     /// Allocate a zeroed unified memory buffer.
     ///
-    /// This is more efficient than `new()` followed by zeroing,
-    /// as the OS may provide pre-zeroed pages.
+    /// Equivalent to [`UmaBuffer::new`], which also zeroes. Retained because
+    /// it names the guarantee explicitly at the call site.
     ///
     /// # Errors
     ///
@@ -141,13 +153,8 @@ impl UmaBuffer {
     /// - `len` exceeds maximum allocation size
     /// - Memory allocation fails
     pub fn zeroed(len: usize) -> Result<Self> {
+        // `new` already allocates with `alloc_zeroed`.
         let buffer = Self::new(len)?;
-
-        // Zero the memory
-        // SAFETY: ptr is valid and len bytes are allocated
-        unsafe {
-            std::ptr::write_bytes(buffer.ptr.as_ptr(), 0, buffer.len);
-        }
 
         Ok(buffer)
     }
@@ -196,14 +203,16 @@ impl UmaBuffer {
     #[must_use]
     #[allow(clippy::missing_const_for_fn)] // slice::from_raw_parts is not const-stable
     pub fn as_slice(&self) -> &[u8] {
-        // SAFETY: ptr is valid and len bytes are allocated
+        // SAFETY: `ptr` is non-null and owns at least `len` bytes, which were
+        // zeroed by `alloc_zeroed` in `new`, so the region is initialized.
+        // `&self` guarantees no concurrent mutable alias.
         unsafe { std::slice::from_raw_parts(self.ptr.as_ptr(), self.len) }
     }
 
     /// Get a mutable slice view of the buffer.
     #[must_use]
     pub fn as_mut_slice(&mut self) -> &mut [u8] {
-        // SAFETY: ptr is valid, we have exclusive access
+        // SAFETY: as `as_slice`, and `&mut self` guarantees exclusive access.
         unsafe { std::slice::from_raw_parts_mut(self.ptr.as_ptr(), self.len) }
     }
 
@@ -278,7 +287,30 @@ pub fn is_available() -> bool {
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
+#[allow(clippy::expect_used)]
 mod tests {
+
+    // Regression: `new()` used plain `alloc()`, leaving the buffer
+    // uninitialized. `as_slice()` is a SAFE method that builds a `&[u8]` over
+    // it, so this sequence was undefined behaviour from entirely safe code.
+    // It must now read back as zeros.
+    #[test]
+    fn test_new_buffer_is_initialized_not_uninit() {
+        let buf = UmaBuffer::new(4096).expect("allocation");
+        assert!(
+            buf.as_slice().iter().all(|&b| b == 0),
+            "new() must hand back initialized memory; as_slice() is safe and \
+             a &[u8] over uninitialized bytes is UB"
+        );
+    }
+
+    #[test]
+    fn test_new_and_zeroed_agree() {
+        let a = UmaBuffer::new(8192).expect("alloc");
+        let b = UmaBuffer::zeroed(8192).expect("alloc");
+        assert_eq!(a.as_slice(), b.as_slice());
+    }
+
     use super::*;
 
     // F071: UMA buffer allocation succeeds
