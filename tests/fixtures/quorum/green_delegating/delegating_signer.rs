@@ -1,5 +1,10 @@
 //! FIXTURE 13 -- must produce GREEN (discrimination case).
 //!
+//! NOTE: manzana no longer ships a Secure Enclave module at all (removed in
+//! 0.3.0). This fixture is retained purely to prove the gate DISCRIMINATES --
+//! that it accepts a genuine boundary call rather than rejecting everything.
+//! A gate that only ever says RED is not a gate.
+//!
 //! Reaches an allowlisted external boundary. If this is also rejected, the
 //! gate is "refuse everything", which reads green while catching nothing.
 

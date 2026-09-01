@@ -8,7 +8,6 @@
 
 use manzana::afterburner::{AfterburnerStats, ProResCodec};
 use manzana::error::{Error, Subsystem};
-use manzana::secure_enclave::{AccessControl, Algorithm, KeyConfig, PublicKey, Signature};
 use manzana::unified_memory::UmaBuffer;
 use proptest::prelude::*;
 use std::collections::HashMap;
@@ -33,7 +32,6 @@ fn subsystem_strategy() -> impl Strategy<Value = Subsystem> {
         Just(Subsystem::Afterburner),
         Just(Subsystem::NeuralEngine),
         Just(Subsystem::Metal),
-        Just(Subsystem::SecureEnclave),
         Just(Subsystem::UnifiedMemory),
     ]
 }
@@ -215,36 +213,8 @@ proptest! {
     }
 }
 
-// Strategy for generating AccessControl values
-fn access_control_strategy() -> impl Strategy<Value = AccessControl> {
-    prop_oneof![
-        Just(AccessControl::None),
-        Just(AccessControl::DevicePasscode),
-        Just(AccessControl::Biometric),
-        Just(AccessControl::BiometricOrPasscode),
-    ]
-}
-
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(200))]
-
-    // Property: KeyConfig builder produces valid config
-    #[test]
-    fn prop_key_config_tag_preserved(tag in "[a-z.]{1,50}") {
-        let config = KeyConfig::new(tag.clone());
-        prop_assert_eq!(config.tag, tag);
-        prop_assert_eq!(config.algorithm, Algorithm::P256);
-    }
-
-    // Property: KeyConfig access control is correctly set
-    #[test]
-    fn prop_key_config_access_control(
-        tag in "[a-z.]{1,30}",
-        ac in access_control_strategy()
-    ) {
-        let config = KeyConfig::new(tag).with_access_control(ac);
-        prop_assert_eq!(config.access_control, ac);
-    }
 
     // Property: UMA buffer allocation preserves length
     #[test]
@@ -273,23 +243,6 @@ proptest! {
     }
 
     // Property: Valid signature length (64-72 for P-256 DER)
-    #[test]
-    fn prop_signature_accepts_well_formed_der(rb in 1u8..=0x7f, sb in 1u8..=0x7f) {
-        // Previously this filled a vector with 0x30 and asserted it parsed,
-        // which only ever tested the length check. Signature::from_bytes now
-        // parses the DER structure, so the input has to actually be one.
-        let mut inner = vec![0x02, 32];
-        inner.extend_from_slice(&[rb; 32]);
-        inner.push(0x02);
-        inner.push(32);
-        inner.extend_from_slice(&[sb; 32]);
-        let mut der = vec![0x30, u8::try_from(inner.len()).unwrap()];
-        der.extend_from_slice(&inner);
-
-        let sig = Signature::from_bytes(der.clone());
-        prop_assert!(sig.is_ok(), "well-formed DER rejected: {:?}", sig.err());
-        prop_assert_eq!(sig.unwrap().len(), der.len());
-    }
 
     // Property: the DER parser must never panic, on ANY input.
     //
@@ -297,77 +250,15 @@ proptest! {
     // panic/unwrap/expect = "deny". A parser reachable from a public
     // constructor that panics on hostile input is a denial-of-service bug, so
     // this throws arbitrary bytes at it and only requires that it returns.
-    #[test]
-    fn prop_signature_parser_never_panics(bytes in proptest::collection::vec(any::<u8>(), 0..300)) {
-        let _ = Signature::from_bytes(bytes);
-    }
 
     // Property: length-prefix fields are attacker-controlled, so drive them
     // directly rather than hoping random bytes hit the interesting paths.
-    #[test]
-    fn prop_signature_parser_survives_hostile_lengths(
-        seq_len in any::<u8>(), r_len in any::<u8>(), s_len in any::<u8>(),
-        tail in proptest::collection::vec(any::<u8>(), 0..80),
-    ) {
-        let mut v = vec![0x30, seq_len, 0x02, r_len];
-        v.extend_from_slice(&tail);
-        v.push(0x02);
-        v.push(s_len);
-        v.extend_from_slice(&tail);
-        let _ = Signature::from_bytes(v);
-    }
 
     // Property: non-DER bytes of a plausible length are rejected.
-    #[test]
-    fn prop_signature_rejects_non_der(len in 64usize..73, fill in 0u8..=255) {
-        let bytes = vec![fill; len];
-        // 0x30 0x?? ... is the only prefix that could parse, and a uniform
-        // fill can never satisfy the nested INTEGER lengths.
-        prop_assert!(Signature::from_bytes(bytes).is_err());
-    }
 
     // Property: Invalid signature lengths rejected
-    #[test]
-    fn prop_signature_invalid_length_short(len in 1usize..64) {
-        let bytes = vec![0x30; len];
-        let sig = Signature::from_bytes(bytes);
-        prop_assert!(sig.is_err());
-    }
 
-    #[test]
-    fn prop_signature_invalid_length_long(len in 73usize..200) {
-        let bytes = vec![0x30; len];
-        let sig = Signature::from_bytes(bytes);
-        prop_assert!(sig.is_err());
-    }
 
-    // Property: P-256 public key must be 65 bytes
-    #[test]
-    fn prop_public_key_wrong_length_rejected(len in 1usize..200) {
-        if len != 65 {
-            let mut bytes = vec![0x04; len];
-            if !bytes.is_empty() {
-                bytes[0] = 0x04;
-            }
-            let pk = PublicKey::from_bytes(bytes);
-            prop_assert!(pk.is_err());
-        }
-    }
-
-    // Property: AccessControl Display not empty
-    #[test]
-    fn prop_access_control_display_not_empty(ac in access_control_strategy()) {
-        let display = ac.to_string();
-        prop_assert!(!display.is_empty());
-    }
-
-    // Property: Algorithm Display contains P-256
-    #[test]
-    fn prop_algorithm_display(_x in 0..10) {
-        let alg = Algorithm::P256;
-        let display = alg.to_string();
-        prop_assert!(display.contains("P-256"));
-    }
 }
 
 #[cfg(test)]
@@ -411,21 +302,6 @@ mod determinism_tests {
     // The previous version of this test asserted that signing the same data
     // twice produced identical bytes, describing it in its own comment as a
     // "deterministic stub" -- it encoded the fake as the expected behaviour.
-    #[test]
-    fn test_secure_enclave_refuses_consistently() {
-        use manzana::secure_enclave::SecureEnclaveSigner;
-
-        for tag in [
-            "",
-            "a",
-            "com.manzana.proptest.determinism",
-            "x".repeat(512).as_str(),
-        ] {
-            let err = SecureEnclaveSigner::create(KeyConfig::new(tag))
-                .expect_err("must never manufacture a signer");
-            assert!(err.is_unimplemented(), "tag {tag:?} produced {err:?}");
-        }
-    }
 
     // F099: UMA buffer operations deterministic
     #[test]

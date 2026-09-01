@@ -7,7 +7,7 @@
 
 use manzana::{
     afterburner::AfterburnerMonitor, metal::MetalCompute, neural_engine::NeuralEngineSession,
-    secure_enclave::SecureEnclaveSigner, unified_memory::UmaBuffer,
+    unified_memory::UmaBuffer,
 };
 
 fn main() {
@@ -99,16 +99,13 @@ fn main() {
     println!("└─────────────────────────────────────────────────────────────┘");
     println!();
 
-    // Secure Enclave
+    // Secure Enclave support was REMOVED in 0.3.0. manzana ships no
+    // cryptography; use the `security-framework` crate.
     println!("┌─────────────────────────────────────────────────────────────┐");
-    println!("│ Secure Enclave (T2 / Apple Silicon)                         │");
+    println!("│ Secure Enclave                                              │");
     println!("├─────────────────────────────────────────────────────────────┤");
-    if SecureEnclaveSigner::is_available() {
-        println!("│ Status: ✓ AVAILABLE                                         │");
-        println!("│ Algorithm: P-256 ECDSA                                      │");
-    } else {
-        println!("│ Status: ✗ Not available                                     │");
-    }
+    println!("│ Removed in 0.3.0 — manzana implements no cryptography.      │");
+    println!("│ Use the `security-framework` crate.                         │");
     println!("└─────────────────────────────────────────────────────────────┘");
     println!();
 
@@ -140,7 +137,6 @@ fn main() {
             AfterburnerMonitor::is_available(),
             NeuralEngineSession::is_available(),
             MetalCompute::is_available(),
-            SecureEnclaveSigner::is_available(),
             UmaBuffer::is_uma_available(),
         ]
         .iter()

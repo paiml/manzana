@@ -9,7 +9,6 @@ use manzana::afterburner::{is_available, AfterburnerMonitor, AfterburnerStats, P
 use manzana::error::{Error, Subsystem};
 use manzana::metal::MetalCompute;
 use manzana::neural_engine::NeuralEngineSession;
-use manzana::secure_enclave::{AccessControl, KeyConfig, SecureEnclaveSigner};
 use manzana::unified_memory::UmaBuffer;
 use manzana::{is_acceleration_available, is_macos, VERSION};
 
@@ -123,7 +122,6 @@ fn test_error_subsystem_all_variants() {
         Subsystem::Afterburner,
         Subsystem::NeuralEngine,
         Subsystem::Metal,
-        Subsystem::SecureEnclave,
         Subsystem::UnifiedMemory,
     ];
 
@@ -186,65 +184,18 @@ fn test_f017_graceful_degradation_on_missing_hardware() {
 // =============================================================================
 
 // F061: Secure Enclave capability is reported honestly on every platform.
-#[test]
-fn test_f061_secure_enclave_capability_is_false() {
-    assert!(
-        !SecureEnclaveSigner::is_available(),
-        "no Secure Enclave backend is implemented, so is_available() must be false"
-    );
-}
-
 // F063: Key creation must NOT succeed -- it must refuse rather than fabricate.
 //
 // These tests are intentionally ungated. Gating the cryptographic surface on
 // `target_os = "macos"` is what let the fabricated implementations ship: the
 // Linux matrix was empty, so nothing here could ever fail in the default CI lane.
-#[test]
-fn test_f063_key_creation_refuses() {
-    let err = SecureEnclaveSigner::create(KeyConfig::new("com.manzana.integration.test"))
-        .expect_err("key creation must not succeed without a real backend");
-    assert!(err.is_unimplemented(), "got {err:?}");
-}
-
 // F065/F066: No signature can be produced at all, so no roundtrip can exist.
-#[test]
-fn test_f065_f066_no_signature_can_be_produced() {
-    // The only way to reach sign() is through a signer, and no signer can be
-    // constructed. Both doors are checked here.
-    assert!(
-        SecureEnclaveSigner::create(KeyConfig::new("com.manzana.integration.signing")).is_err()
-    );
-    assert!(SecureEnclaveSigner::load("com.manzana.integration.signing").is_err());
-}
-
 // F067: Verification cannot report a boolean it has no basis for.
 //
 // The removed implementation answered `Ok(true)`/`Ok(false)` by re-deriving a
 // deterministic fake and comparing bytes. A verifier that cannot check a
 // signature must return an error, never `Ok(false)` -- callers routinely treat
 // `Ok(false)` as "definitively invalid", which was never true here.
-#[test]
-fn test_f067_verification_cannot_be_reached() {
-    let err = SecureEnclaveSigner::create(KeyConfig::new("com.manzana.integration.verify"))
-        .expect_err("no signer, therefore no verification path");
-    assert!(err.is_unimplemented(), "got {err:?}");
-}
-
-#[test]
-fn test_secure_enclave_access_control_options() {
-    // Test all access control variants can be used in config
-    let configs = [
-        KeyConfig::new("test1").with_access_control(AccessControl::None),
-        KeyConfig::new("test2").with_access_control(AccessControl::DevicePasscode),
-        KeyConfig::new("test3").with_access_control(AccessControl::Biometric),
-        KeyConfig::new("test4").with_access_control(AccessControl::BiometricOrPasscode),
-    ];
-
-    for (i, config) in configs.iter().enumerate() {
-        assert_eq!(config.tag, format!("test{}", i + 1));
-    }
-}
-
 // =============================================================================
 // Metal API tests (F046-F060)
 // =============================================================================
@@ -365,26 +316,3 @@ fn test_f078_large_allocation_fails() {
 // =============================================================================
 // Cross-module integration tests
 // =============================================================================
-
-#[test]
-fn test_all_subsystems_have_availability_check() {
-    // Every subsystem should have an is_available() function
-    let _ = manzana::afterburner::is_available();
-    let _ = manzana::neural_engine::is_available();
-    let _ = manzana::metal::is_available();
-    let _ = manzana::secure_enclave::is_available();
-    let _ = manzana::unified_memory::is_available();
-}
-
-#[test]
-fn test_acceleration_available_aggregates_all() {
-    // If any subsystem is available, acceleration should be available
-    let accel = is_acceleration_available();
-    let any_available = manzana::afterburner::is_available()
-        || manzana::neural_engine::is_available()
-        || manzana::metal::is_available()
-        || manzana::secure_enclave::is_available()
-        || manzana::unified_memory::is_available();
-
-    assert_eq!(accel, any_available);
-}

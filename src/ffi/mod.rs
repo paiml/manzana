@@ -41,9 +41,6 @@
 #[cfg(target_os = "macos")]
 pub mod iokit;
 
-#[cfg(target_os = "macos")]
-pub mod security;
-
 // Non-macOS implementations. These are not stubs in the fabricating sense:
 // they report unavailability rather than inventing a result.
 #[cfg(not(target_os = "macos"))]

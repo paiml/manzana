@@ -25,13 +25,11 @@ spec = "docs/specifications/security-architecture-plan.md"
 # makes a fabricated return value unrepresentable rather than merely tested-for.
 [hardware_modules]
 paths = [
-    "src/secure_enclave/mod.rs",
     "src/neural_engine.rs",
     "src/metal/mod.rs",
     "src/unified_memory.rs",
     "src/afterburner.rs",
     "src/ffi/iokit.rs",
-    "src/ffi/security.rs",
 ]
 
 # Boundaries that count as "reaching real hardware". A call resolving into one
@@ -55,24 +53,27 @@ paths = [
     "src/lib.rs",
     "src/error.rs",
     "src/ffi/mod.rs",
-    "src/secure_enclave/types.rs",
 ]
 
 # Surfaces judged OUT of charter — a maintained Rust crate already covers them.
 # Presence here is a deletion commitment with a target version, not a wishlist.
-[[out_of_charter]]
-module = "src/secure_enclave/mod.rs"
-covered_by = "security-framework"
-downloads = 349_000_000
-verdict = "delete"
-target_version = "0.4.0"
-rationale = """
-Wrapping security-framework adds zero capability and imports 100% of the
-RUSTSEC-2026-0273 advisory surface. Deletion drives the cryptographic attack
-surface to zero and makes "never build cryptography" un-violable by
-construction rather than by policy. 0.3.0 ships refusal; a live disclosure must
-not be churned mid-flight.
-"""
+# secure_enclave was DELETED in 0.3.0 rather than deferred to 0.4.0.
+#
+# The deferral rationale -- "a live disclosure must not be churned" -- did not
+# survive scrutiny: nothing had been published, so there was no live release to
+# churn. Wrapping security-framework (349M downloads) added zero capability and
+# imported 100% of the RUSTSEC-2026-0273 advisory surface.
+#
+# Deleting drove the cryptographic attack surface to zero and made "never build
+# cryptography" un-violable by construction rather than by policy. It also
+# removed, at no cost, a hand-rolled DER parser, a PublicKey type that accepted
+# points not on the P-256 curve, and a test-only constructor that existed
+# solely to make unreachable methods reachable.
+[removed]
+modules = ["src/secure_enclave/", "src/ffi/security.rs"]
+version = "0.3.0"
+use_instead = "security-framework"
+crypto_surface_lines_removed = 798
 
 # Known naming defect: the type claims a capability it does not have. Tracked
 # here so it is not lost — stale self-description in a type name is still F10.

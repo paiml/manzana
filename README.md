@@ -35,9 +35,14 @@ The same pattern appeared elsewhere: `neural_engine::infer()` returned a
 correctly-shaped all-zero tensor, and `metal::dispatch()` returned `Ok(())`
 having dispatched nothing.
 
-**As of 0.3.0 every one of those operations returns `Error::Unimplemented`
-instead of a fabricated value.** Nothing in this crate will hand you a result
-that looks real but is not.
+**As of 0.3.0 the `secure_enclave` module is DELETED, not fixed.** manzana
+ships no cryptography at all. Wrapping `security-framework` would have added
+zero capability while permanently attaching this advisory to the crate, so the
+module is gone and the cryptographic attack surface is zero.
+
+The remaining fabricating operations (`neural_engine`, `metal`) now return
+`Error::Unimplemented`. Nothing in this crate will hand you a result that looks
+real but is not.
 
 For real Secure Enclave and Keychain access, use
 [`security-framework`](https://crates.io/crates/security-framework).
@@ -86,8 +91,6 @@ function returns `Error::Unimplemented` — it does not return a guess.
 | Metal shader compilation, buffer allocation, dispatch | `metal` | **Not implemented** |
 | CoreML model loading and inference | `neural_engine` | **Not implemented** |
 | ANE capability querying (TOPS, cores) | `neural_engine` | **Not implemented** |
-| Secure Enclave key creation, signing, verification, deletion | `secure_enclave` | **Not implemented** |
-| Secure Enclave hardware detection | `secure_enclave` | **Not implemented** |
 | GPU-shared / zero-copy buffers | `unified_memory` | **Not implemented** |
 
 Notes on the implemented rows:
@@ -125,8 +128,7 @@ default = []
 afterburner = []      # Mac Pro Afterburner support
 neural-engine = []    # Apple Silicon Neural Engine
 metal = []            # Metal GPU compute
-secure-enclave = []   # Secure Enclave signing
-full = ["afterburner", "neural-engine", "metal", "secure-enclave"]
+full = ["afterburner", "neural-engine", "metal"]
 ```
 
 > **Note:** these flags are currently declared but gate nothing — no `#[cfg(feature = ...)]`
@@ -174,10 +176,11 @@ Operations that cannot reach real hardware fail rather than guess. Callers can
 detect this specifically:
 
 ```rust
-use manzana::secure_enclave::{SecureEnclaveSigner, KeyConfig};
+use manzana::neural_engine::NeuralEngineSession;
+use std::path::Path;
 
-let err = SecureEnclaveSigner::create(KeyConfig::new("com.example.signing"))
-    .expect_err("Secure Enclave support is not implemented");
+let err = NeuralEngineSession::load(Path::new("model.mlmodelc"))
+    .expect_err("CoreML model loading is not implemented");
 assert!(err.is_unimplemented());
 ```
 
@@ -185,7 +188,6 @@ assert!(err.is_unimplemented());
 
 ```bash
 cargo run --example hardware_discovery   # Discover available Apple hardware
-cargo run --example secure_signing       # Report Secure Enclave status (no signing)
 cargo run --example metal_compute        # Enumerate Metal devices
 ```
 
@@ -199,9 +201,6 @@ src/ffi/iokit.rs        Real FFI. extern "C" bindings to IOServiceMatching,
                         IORegistryEntryCreateCFProperties and friends, each
                         unsafe block carrying a // SAFETY: justification.
                         This is what backs Afterburner detection and stats.
-src/ffi/security.rs     No FFI. Declares type aliases and an OSStatus mapping
-                        only -- no extern "C" block, no unsafe operation. Its
-                        allow(unsafe_code) is reserved for the real bindings.
 src/unified_memory.rs   Carries its own #![allow(unsafe_code)] for the
                         page-aligned allocation and its RAII Drop.
 ```
@@ -215,7 +214,7 @@ failures and could not fail. Both the target and the claim have been corrected.
 
 | Metric | Value |
 |--------|-------|
-| Tests | 153 on Linux; more on macOS, where platform-gated tests also run |
+| Tests | 126 on Linux; more on macOS, where platform-gated tests also run |
 | Clippy | 0 warnings (pedantic + nursery, `--all-targets`) |
 | Unsafe code | `src/ffi/iokit.rs` (real IOKit FFI) and `src/unified_memory.rs` |
 

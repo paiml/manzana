@@ -69,11 +69,23 @@ The same pattern existed outside the module named in the advisory:
   cannot do the real thing must fail loudly; a plausible-looking result is more
   dangerous, because a caller cannot distinguish it from a genuine one.
   `[V]` refusal tests asserting `err.is_unimplemented()` per operation
-- `secure_enclave` performs **no** cryptography in 0.3.0. The fabricating
-  bodies are deleted and every operation returns `Error::Unimplemented`.
-  Delegating to [`security-framework`][sf] is the 0.4.0 architecture; it is
-  **not shipped code**, and no such dependency is declared.
-  `[V]` `cargo test test_no_construction_path_exists`
+### Removed
+
+- **`secure_enclave` is deleted, along with `src/ffi/security.rs` and the
+  `secure-enclave` feature.** manzana ships no cryptography. Use
+  [`security-framework`][sf].
+
+  Deleting rather than delegating was the right call and the earlier plan to
+  defer it to 0.4.0 was wrong: the deferral rested on "a live disclosure must
+  not be churned", but nothing had been published, so there was no live release
+  to churn. Wrapping `security-framework` (349M downloads) would have added
+  zero capability while permanently attaching RUSTSEC-2026-0273 to this crate.
+
+  798 lines of cryptographic surface removed, including a hand-rolled DER
+  parser, a `PublicKey` type that accepted points not on the P-256 curve, and a
+  test-only constructor that existed solely to make unreachable methods
+  reachable. The advisory's scope is now closed by absence.
+  `[V]` `grep -r secure_enclave src/` returns nothing
 - Security-critical tests are no longer `#[cfg(target_os = "macos")]`-gated.
   That gating left the default Linux CI lane with an *empty* test set for the
   cryptographic surface — and zero tests passing is indistinguishable from all

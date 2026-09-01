@@ -12,6 +12,9 @@
 //!
 //! # Hardware support
 //!
+//! manzana ships no cryptography. Secure Enclave access was removed in
+//! 0.3.0 -- see the Security section below. Use `security-framework`.
+//!
 //! Presence detection is implemented for the rows below. What you can *do*
 //! with each is a separate question -- see the capability table in the README.
 //! Operations that are not implemented return [`Error::Unimplemented`] rather
@@ -22,7 +25,6 @@
 //! | Afterburner FPGA | [`afterburner`] | Yes (IOKit) | Stats implemented |
 //! | Metal GPU | `metal` | Yes (`system_profiler`) | Compute not implemented |
 //! | Neural Engine | `neural_engine` | Build-target only | Inference not implemented |
-//! | Secure Enclave | `secure_enclave` | Delegated to `security-framework` | See module docs |
 //!
 //! # Quick Start
 //!
@@ -95,7 +97,6 @@ pub mod afterburner;
 pub mod error;
 pub mod metal;
 pub mod neural_engine;
-pub mod secure_enclave;
 pub mod unified_memory;
 
 // FFI module is internal only - not exported
@@ -106,9 +107,6 @@ pub use afterburner::{AfterburnerMonitor, AfterburnerStats, ProResCodec};
 pub use error::{Error, Result, Subsystem};
 pub use metal::{CompiledShader, MetalBuffer, MetalCompute, MetalDevice};
 pub use neural_engine::{AneCapabilities, AneOp, NeuralEngineSession, Tensor};
-pub use secure_enclave::{
-    AccessControl, Algorithm, KeyConfig, PublicKey, SecureEnclaveSigner, Signature,
-};
 pub use unified_memory::UmaBuffer;
 
 /// Library version.
@@ -131,7 +129,6 @@ pub fn is_acceleration_available() -> bool {
     afterburner::is_available()
         || neural_engine::is_available()
         || metal::is_available()
-        || secure_enclave::is_available()
         || unified_memory::is_available()
 }
 

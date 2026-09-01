@@ -119,8 +119,6 @@ pub enum Subsystem {
     NeuralEngine,
     /// Metal GPU compute.
     Metal,
-    /// Secure Enclave (T2/Apple Silicon).
-    SecureEnclave,
     /// Unified Memory Architecture.
     UnifiedMemory,
 }
@@ -131,7 +129,6 @@ impl fmt::Display for Subsystem {
             Self::Afterburner => write!(f, "Afterburner FPGA"),
             Self::NeuralEngine => write!(f, "Neural Engine"),
             Self::Metal => write!(f, "Metal GPU"),
-            Self::SecureEnclave => write!(f, "Secure Enclave"),
             Self::UnifiedMemory => write!(f, "Unified Memory"),
         }
     }
@@ -317,7 +314,6 @@ mod tests {
         assert_eq!(Subsystem::Afterburner.to_string(), "Afterburner FPGA");
         assert_eq!(Subsystem::NeuralEngine.to_string(), "Neural Engine");
         assert_eq!(Subsystem::Metal.to_string(), "Metal GPU");
-        assert_eq!(Subsystem::SecureEnclave.to_string(), "Secure Enclave");
         assert_eq!(Subsystem::UnifiedMemory.to_string(), "Unified Memory");
     }
 
