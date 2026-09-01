@@ -20,6 +20,7 @@ determinism_tests::test_stats_methods_deterministic
 determinism_tests::test_uma_deterministic
 e2e_detection_agrees_with_enumeration
 e2e_errors_are_actionable
+e2e_macos_metal_enumeration_is_real
 e2e_no_fabricated_devices
 e2e_no_operation_fabricates_a_result
 e2e_platform_expectations
@@ -36,13 +37,19 @@ error::tests::test_error_messages_are_readable
 error::tests::test_error_predicates
 error::tests::test_iokit_error_includes_code
 error::tests::test_subsystem_display
+ffi::iokit::tests::test_find_afterburner_graceful_on_missing
+ffi::iokit::tests::test_raw_stats_clone
+ffi::iokit::tests::test_raw_stats_debug
+ffi::iokit::tests::test_raw_stats_default
+ffi::iokit::tests::test_service_names_not_empty
 ffi::tests::test_module_compiles
-ffi::tests::test_non_macos_get_stats_reports_absence
 metal::tests::test_allocate_buffer_is_unimplemented
 metal::tests::test_compile_shader_is_unimplemented
 metal::tests::test_compiled_shader_name_accessor
 metal::tests::test_compute_accessors
 metal::tests::test_convenience_function
+metal::tests::test_detect_gpu_vram
+metal::tests::test_detect_real_gpus
 metal::tests::test_device_construction_agrees_with_enumeration
 metal::tests::test_device_is_apple_silicon_follows_unified_memory
 metal::tests::test_device_properties
@@ -121,6 +128,8 @@ test_f017_graceful_degradation_on_missing_hardware
 test_f031_f032_neural_engine_detection
 test_f038_invalid_model_path
 test_f046_metal_device_enumeration
+test_f047_device_properties
+test_f060_compute_path_refuses
 test_f071_uma_allocation
 test_f076_metal_alignment
 test_f078_large_allocation_fails

@@ -1,1 +1,1 @@
-{"host":"intel","os":"Linux","arch":"x86_64","os_version":"","cargo":"cargo 1.97.1 (c980f4866 2026-06-30)","rc":0,"passed":7,"failed":0}
+{"host":"intel","os":"Linux","arch":"x86_64","os_version":"","cargo":"cargo 1.97.1 (c980f4866 2026-06-30)","rc":0,"e2e_passed":7,"e2e_failed":0,"tests_existing":154,"ignored":0}

@@ -179,8 +179,18 @@ jobs:
           echo "::warning::pv=${{ steps.tools.outputs.pv }} pmat=${{ steps.tools.outputs.pmat }} -- these checks did NOT run on this runner and are not evidence."
 
   # -------------------------------------------------------------------------
-  # Aggregator. Branch protection points at THIS check, so it reports on every
-  # PR and cannot be left pending by a filtered job.
+  # Aggregator.
+  #
+  # IMPORTANT, and stated rather than assumed: this check does NOT block merges
+  # yet. `main` is protected by the ruleset "Green Main — unified gate
+  # enforcement" (active), whose required status check context is `gate` --
+  # supplied by the sovereign-ci reusable workflow, not by this file. Until
+  # `quorum / gate` is added to that ruleset's required contexts, these gates
+  # REPORT but do not enforce.
+  #
+  # Adding it is a repository-settings change and deliberately not done from
+  # here. Claiming enforcement this workflow does not have would be the exact
+  # defect class the gates below exist to prevent.
   # -------------------------------------------------------------------------
   quorum-gate:
     name: quorum / gate

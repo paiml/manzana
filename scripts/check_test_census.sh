@@ -51,7 +51,7 @@ trap cleanup EXIT
 cargo test --all-features -- --list > "$WORK/out.txt" 2>/dev/null \
   || die "cargo test --list failed; the census cannot be taken"
 
-grep ': test$' "$WORK/out.txt" | sed 's/: test$//' | sort -u > "$WORK/names.txt" \
+grep ': test$' "$WORK/out.txt" | sed 's/: test$//' | LC_ALL=C sort -u > "$WORK/names.txt" \
   || die "no tests parsed from the harness listing"
 
 total=$(wc -l < "$WORK/names.txt" | tr -d ' ')
@@ -107,7 +107,7 @@ if [ "$total" -lt "$base_total" ]; then
   fail=1
 fi
 
-removed=$(comm -23 "$BASELINE" "$WORK/names.txt" || true)
+removed=$(LC_ALL=C comm -23 "$BASELINE" "$WORK/names.txt" || true)
 if [ -n "$removed" ]; then
   printf '\nVIOLATION: test(s) present in the baseline and now absent:\n' >&2
   printf '%s\n' "$removed" | sed 's/^/  - /' >&2
@@ -117,7 +117,7 @@ if [ -n "$removed" ]; then
   fail=1
 fi
 
-added=$(comm -13 "$BASELINE" "$WORK/names.txt" || true)
+added=$(LC_ALL=C comm -13 "$BASELINE" "$WORK/names.txt" || true)
 [ -n "$added" ] && printf '\n  new tests: %d\n' "$(printf '%s\n' "$added" | grep -c . || true)"
 
 [ "$fail" -eq 0 ] || exit 1
