@@ -274,13 +274,30 @@ proptest! {
 
     // Property: Valid signature length (64-72 for P-256 DER)
     #[test]
-    fn prop_signature_valid_length(len in 64usize..73) {
-        let bytes = vec![0x30; len]; // DER SEQUENCE marker
-        let sig = Signature::from_bytes(bytes);
-        prop_assert!(sig.is_ok());
-        if let Ok(s) = sig {
-            prop_assert_eq!(s.len(), len);
-        }
+    fn prop_signature_accepts_well_formed_der(rb in 1u8..=0x7f, sb in 1u8..=0x7f) {
+        // Previously this filled a vector with 0x30 and asserted it parsed,
+        // which only ever tested the length check. Signature::from_bytes now
+        // parses the DER structure, so the input has to actually be one.
+        let mut inner = vec![0x02, 32];
+        inner.extend_from_slice(&[rb; 32]);
+        inner.push(0x02);
+        inner.push(32);
+        inner.extend_from_slice(&[sb; 32]);
+        let mut der = vec![0x30, u8::try_from(inner.len()).unwrap()];
+        der.extend_from_slice(&inner);
+
+        let sig = Signature::from_bytes(der.clone());
+        prop_assert!(sig.is_ok(), "well-formed DER rejected: {:?}", sig.err());
+        prop_assert_eq!(sig.unwrap().len(), der.len());
+    }
+
+    // Property: non-DER bytes of a plausible length are rejected.
+    #[test]
+    fn prop_signature_rejects_non_der(len in 64usize..73, fill in 0u8..=255) {
+        let bytes = vec![fill; len];
+        // 0x30 0x?? ... is the only prefix that could parse, and a uniform
+        // fill can never satisfy the nested INTEGER lengths.
+        prop_assert!(Signature::from_bytes(bytes).is_err());
     }
 
     // Property: Invalid signature lengths rejected

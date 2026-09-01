@@ -49,6 +49,10 @@
 //! authentication, and would resist extraction by root. None of those
 //! properties hold today, because no key is created.
 
+mod types;
+
+pub use types::{PublicKey, Signature};
+
 use crate::error::{Error, Result};
 
 /// Elliptic curve algorithm for Secure Enclave operations.
@@ -131,109 +135,6 @@ impl KeyConfig {
     pub fn with_label(mut self, label: impl Into<String>) -> Self {
         self.label = Some(label.into());
         self
-    }
-}
-
-/// A P-256 ECDSA signature from the Secure Enclave.
-///
-/// The signature is in DER format as returned by Security.framework.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Signature {
-    /// Raw signature bytes (DER-encoded).
-    bytes: Vec<u8>,
-}
-
-impl Signature {
-    /// Create a signature from raw bytes.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the signature is empty or malformed.
-    pub fn from_bytes(bytes: Vec<u8>) -> Result<Self> {
-        if bytes.is_empty() {
-            return Err(Error::invalid_input("signature cannot be empty"));
-        }
-
-        // P-256 DER signatures are typically 70-72 bytes
-        if bytes.len() < 64 || bytes.len() > 72 {
-            return Err(Error::invalid_input(format!(
-                "invalid P-256 signature length: {} (expected 64-72)",
-                bytes.len()
-            )));
-        }
-
-        Ok(Self { bytes })
-    }
-
-    /// Get the raw signature bytes.
-    #[must_use]
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.bytes
-    }
-
-    /// Get the signature length.
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.bytes.len()
-    }
-
-    /// Check if the signature is empty (always false for valid signatures).
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.bytes.is_empty()
-    }
-}
-
-/// Public key from a Secure Enclave key pair.
-///
-/// Can be exported and used for verification on other systems.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PublicKey {
-    /// Raw public key bytes (uncompressed point format).
-    bytes: Vec<u8>,
-}
-
-impl PublicKey {
-    /// Create a public key from raw bytes.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the key is malformed.
-    pub fn from_bytes(bytes: Vec<u8>) -> Result<Self> {
-        // P-256 uncompressed public key: 04 || X (32 bytes) || Y (32 bytes) = 65 bytes
-        if bytes.len() != 65 {
-            return Err(Error::invalid_input(format!(
-                "invalid P-256 public key length: {} (expected 65)",
-                bytes.len()
-            )));
-        }
-
-        // Check uncompressed point format marker
-        if bytes[0] != 0x04 {
-            return Err(Error::invalid_input(
-                "public key must be in uncompressed point format (0x04 prefix)",
-            ));
-        }
-
-        Ok(Self { bytes })
-    }
-
-    /// Get the raw public key bytes.
-    #[must_use]
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.bytes
-    }
-
-    /// Get the X coordinate of the public key point.
-    #[must_use]
-    pub fn x(&self) -> &[u8] {
-        &self.bytes[1..33]
-    }
-
-    /// Get the Y coordinate of the public key point.
-    #[must_use]
-    pub fn y(&self) -> &[u8] {
-        &self.bytes[33..65]
     }
 }
 
@@ -543,9 +444,54 @@ mod tests {
         let result = Signature::from_bytes(vec![]);
         assert!(result.is_err());
 
-        // Valid length
-        let result = Signature::from_bytes(vec![0x30; 70]);
-        assert!(result.is_ok());
+        // `vec![0x30; 70]` used to be accepted: the only invariant was
+        // length. It is not DER and must now be rejected.
+        assert!(Signature::from_bytes(vec![0x30; 70]).is_err());
+
+        // A well-formed DER ECDSA-Sig-Value is accepted.
+        assert!(Signature::from_bytes(der_sig(&[0x11; 32], &[0x22; 32])).is_ok());
+    }
+
+    /// Build a DER `ECDSA-Sig-Value` from raw big-endian r and s.
+    fn der_sig(r: &[u8], s: &[u8]) -> Vec<u8> {
+        fn int(v: &[u8]) -> Vec<u8> {
+            let mut body = v.to_vec();
+            if body[0] & 0x80 != 0 {
+                body.insert(0, 0x00); // keep it positive
+            }
+            let mut out = vec![0x02, u8::try_from(body.len()).unwrap()];
+            out.extend_from_slice(&body);
+            out
+        }
+        let mut inner = int(r);
+        inner.extend_from_slice(&int(s));
+        let mut out = vec![0x30, u8::try_from(inner.len()).unwrap()];
+        out.extend_from_slice(&inner);
+        out
+    }
+
+    #[test]
+    fn test_signature_rejects_the_shipped_forgery_shape() {
+        // The exact shape 0.1.0/0.2.0 emitted: SEQUENCE(0x44) with r = 32
+        // copies of a byte-sum and s = 32 copies of a byte-sum. This one IS
+        // structurally valid DER -- structure alone was never going to catch
+        // the fabrication, which is why sign() had to be removed rather than
+        // validated. Recorded so the distinction is not lost.
+        let forged = der_sig(&[0x07; 32], &[0x2a; 32]);
+        assert!(
+            Signature::from_bytes(forged).is_ok(),
+            "the old forgery was well-formed DER; only removing sign() fixes it"
+        );
+
+        // But arbitrary garbage of the right length no longer passes.
+        for junk in [
+            vec![0x30; 70],
+            vec![0xff; 70],
+            vec![0x30, 0x44],
+            vec![0u8; 70],
+        ] {
+            assert!(Signature::from_bytes(junk).is_err());
+        }
     }
 
     #[test]
