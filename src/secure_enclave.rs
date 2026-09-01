@@ -9,38 +9,32 @@
 //! For real Secure Enclave and Keychain access today, use the
 //! [`security-framework`](https://crates.io/crates/security-framework) crate.
 //!
-//! ## Why this module exists in this state
+//! ## Why this module is in this state
 //!
-//! Versions 0.1.0 and 0.2.0 of this crate shipped *stubbed* implementations
-//! that returned fabricated values while documenting themselves as real
-//! hardware-backed cryptography:
+//! Versions 0.1.0 and 0.2.0 shipped stubs that returned fabricated values
+//! while documenting themselves as real hardware-backed cryptography:
+//! `create()` returned a fixed public key byte-summed from the key tag,
+//! `sign()` returned 32 copies of a byte-sum of the message and of the tag,
+//! and `verify()` re-derived that same value and compared it — accepting
+//! forgeries from anyone who knew the tag.
 //!
-//! - `create()` returned a hardcoded public key derived from a byte-sum of the
-//!   key tag — no key was ever generated, in the Secure Enclave or anywhere else.
-//! - `sign()` returned a DER-shaped blob whose `r` was 32 copies of a byte-sum
-//!   of the message and whose `s` was 32 copies of a byte-sum of the tag.
-//! - `verify()` recomputed that same value and compared it, so it returned
-//!   `true` for the forgery and could not reject anything an attacker who knew
-//!   the tag could produce.
+//! Both versions are **yanked** and are the subject of
+//! [RUSTSEC-2026-0273](https://rustsec.org/advisories/RUSTSEC-2026-0273.html).
+//! See [issue #3](https://github.com/paiml/manzana/issues/3) and
+//! `docs/specifications/security-architecture-plan.md` for the full analysis.
 //!
-//! Those versions have been **yanked** from crates.io. See
-//! [issue #3](https://github.com/paiml/manzana/issues/3) and
-//! `docs/specifications/security-architecture-plan.md`.
-//!
-//! Rather than fix the fake values, this release removes them. A security
-//! operation that cannot reach real hardware must fail loudly; returning a
-//! plausible-looking result is the more dangerous outcome, because a caller
-//! cannot tell it apart from a genuine one.
+//! Rather than fix the fabricated values, this release removes them. An
+//! operation that cannot reach real hardware must fail loudly; a
+//! plausible-looking result is more dangerous, because a caller cannot tell
+//! it apart from a genuine one.
 //!
 //! # Example
-//!
-//! Every call currently fails. Callers must handle that:
 //!
 //! ```
 //! use manzana::secure_enclave::{SecureEnclaveSigner, KeyConfig};
 //!
-//! // `is_available()` reports whether manzana can actually perform Secure
-//! // Enclave operations. It is `false` in this release on every platform.
+//! // Reports whether manzana can perform Secure Enclave operations:
+//! // false in this release, on every platform.
 //! assert!(!SecureEnclaveSigner::is_available());
 //!
 //! let err = SecureEnclaveSigner::create(KeyConfig::new("com.example.signing"))
@@ -50,14 +44,10 @@
 //!
 //! # Intended Security Model (not yet delivered)
 //!
-//! When implemented on top of `Security.framework`, keys created in the
-//! Secure Enclave would:
-//! - Never leave the hardware security module
-//! - Be bound to the specific device
-//! - Optionally require biometric authentication
-//! - Resist extraction even by root
-//!
-//! None of those properties hold today, because no key is created.
+//! Implemented on `Security.framework`, keys would never leave the hardware
+//! security module, would be device-bound, could require biometric
+//! authentication, and would resist extraction by root. None of those
+//! properties hold today, because no key is created.
 
 use crate::error::{Error, Result};
 

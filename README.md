@@ -42,8 +42,15 @@ that looks real but is not.
 For real Secure Enclave and Keychain access, use
 [`security-framework`](https://crates.io/crates/security-framework).
 
-Reported in [#3](https://github.com/paiml/manzana/issues/3). Full analysis and
-remediation plan: [`docs/specifications/security-architecture-plan.md`](docs/specifications/security-architecture-plan.md).
+Tracked as [**RUSTSEC-2026-0273**](https://rustsec.org/advisories/RUSTSEC-2026-0273.html)
+(category: `crypto-failure`), reported in
+[#3](https://github.com/paiml/manzana/issues/3). Full analysis and remediation
+plan: [`docs/specifications/security-architecture-plan.md`](docs/specifications/security-architecture-plan.md).
+
+Note that the advisory records the affected platform as `aarch64` macOS. The
+defect was in fact broader: `is_available()` returned `true` unconditionally on
+**x86_64** macOS as well, including pre-T2 Intel Macs with no Secure Enclave at
+all.
 
 ---
 
