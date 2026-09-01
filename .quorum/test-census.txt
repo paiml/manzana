@@ -1,0 +1,154 @@
+afterburner::tests::test_convert_raw_stats_clamps_negative_utilization
+afterburner::tests::test_convert_raw_stats_clamps_utilization
+afterburner::tests::test_convert_raw_stats_filters_invalid_power
+afterburner::tests::test_convert_raw_stats_filters_invalid_temperature
+afterburner::tests::test_default_stats_zero_streams
+afterburner::tests::test_is_available_static
+afterburner::tests::test_new_graceful_on_missing_hardware
+afterburner::tests::test_prores_codec_display
+afterburner::tests::test_prores_codec_equality
+afterburner::tests::test_prores_codec_hash
+afterburner::tests::test_rapid_stats_creation
+afterburner::tests::test_stats_capacity_used_percent
+afterburner::tests::test_stats_capacity_used_percent_zero_capacity
+afterburner::tests::test_stats_clone
+afterburner::tests::test_stats_debug
+afterburner::tests::test_stats_is_active
+afterburner::tests::test_stats_temperature_safe
+determinism_tests::test_error_methods_deterministic
+determinism_tests::test_stats_methods_deterministic
+determinism_tests::test_uma_deterministic
+e2e_detection_agrees_with_enumeration
+e2e_errors_are_actionable
+e2e_no_fabricated_devices
+e2e_no_operation_fabricates_a_result
+e2e_platform_expectations
+e2e_tensor_contract_holds
+e2e_uma_buffer_is_a_real_allocation
+error::tests::test_display_impl_not_generic
+error::tests::test_error_clone
+error::tests::test_error_code_extraction
+error::tests::test_error_constructors
+error::tests::test_error_debug
+error::tests::test_error_equality
+error::tests::test_error_implements_std_error
+error::tests::test_error_messages_are_readable
+error::tests::test_error_predicates
+error::tests::test_iokit_error_includes_code
+error::tests::test_subsystem_display
+ffi::tests::test_module_compiles
+ffi::tests::test_non_macos_get_stats_reports_absence
+metal::tests::test_allocate_buffer_is_unimplemented
+metal::tests::test_compiled_shader_name_accessor
+metal::tests::test_compile_shader_is_unimplemented
+metal::tests::test_compute_accessors
+metal::tests::test_convenience_function
+metal::tests::test_device_construction_agrees_with_enumeration
+metal::tests::test_device_is_apple_silicon_follows_unified_memory
+metal::tests::test_device_properties
+metal::tests::test_devices_no_panic
+metal::tests::test_device_vram_gb_converts_bytes
+metal::tests::test_dispatch_is_unimplemented
+metal::tests::test_is_available_consistent
+metal::tests::test_metal_buffer_accessors
+metal::tests::test_metal_buffer_methods
+metal::tests::test_new_invalid_index
+metal::tests::test_no_fabricated_device_when_detection_fails
+neural_engine::tests::test_ane_op_display
+neural_engine::tests::test_ane_op_display_covers_every_variant
+neural_engine::tests::test_ane_op_equality
+neural_engine::tests::test_ane_op_hash
+neural_engine::tests::test_capabilities_default_values
+neural_engine::tests::test_capabilities_legacy_shape_still_available_as_placeholder
+neural_engine::tests::test_capabilities_never_fabricates_device_specs
+neural_engine::tests::test_contract_binding_is_live
+neural_engine::tests::test_convenience_function
+neural_engine::tests::test_infer_refuses_rather_than_returning_zeros
+neural_engine::tests::test_infer_refuses_when_reachable
+neural_engine::tests::test_is_available_matches_build_target
+neural_engine::tests::test_load_is_unimplemented_not_fabricated
+neural_engine::tests::test_load_rejects_bad_extension_distinctly
+neural_engine::tests::test_model_path_accessor
+neural_engine::tests::test_tensor_new_invalid_size
+neural_engine::tests::test_tensor_new_valid
+neural_engine::tests::test_tensor_zeros
+prop_capacity_formula_correct
+prop_capacity_used_percent_non_negative
+prop_capacity_zero_means_zero_percent
+prop_error_clone_equals
+prop_error_code_iokit
+prop_error_code_none_for_others
+prop_error_code_security
+prop_error_display_readable
+prop_is_active_iff_streams_positive
+prop_is_not_available_only_for_variant
+prop_is_timeout_only_for_variant
+prop_prores_codec_display_not_empty
+prop_stats_clone_equals
+prop_subsystem_display_not_empty
+prop_temperature_none_means_none_safety
+prop_temperature_safety_consistent
+prop_tensor_construction_is_total
+prop_tensor_overflowing_shape_is_rejected_not_panicking
+prop_uma_allocated_ge_requested
+prop_uma_buffer_alignment
+prop_uma_buffer_length_preserved
+src/afterburner.rs - afterburner::AfterburnerMonitor::new (line 161)
+src/afterburner.rs - afterburner::AfterburnerMonitor::stats (line 188)
+src/afterburner.rs - afterburner (line 9)
+src/error.rs - error::Error::invalid_input (line 207)
+src/error.rs - error::Error::iokit (line 166)
+src/error.rs - error::Error::is_unimplemented (line 306)
+src/error.rs - error::Error::not_available (line 148)
+src/error.rs - error::Error::not_found (line 251)
+src/error.rs - error::Error::timeout (line 224)
+src/error.rs - error::Error::unimplemented (line 278)
+src/lib.rs - (line 31)
+src/lib.rs - (line 77)
+src/metal/mod.rs - metal (line 8)
+src/neural_engine/mod.rs - neural_engine (line 20)
+src/neural_engine/mod.rs - neural_engine::NeuralEngineSession::load (line 267)
+src/unified_memory.rs - unified_memory (line 26)
+src/unified_memory.rs - unified_memory::UmaBuffer::new (line 110)
+test_afterburner_convenience_function
+test_afterburner_is_available_consistent
+test_afterburner_monitor_graceful_on_missing_hardware
+test_afterburner_stats_api
+test_error_constructors_all_variants
+test_error_std_error_trait
+test_error_subsystem_all_variants
+test_f017_graceful_degradation_on_missing_hardware
+test_f031_f032_neural_engine_detection
+test_f038_invalid_model_path
+test_f046_metal_device_enumeration
+test_f071_uma_allocation
+test_f076_metal_alignment
+test_f078_large_allocation_fails
+test_is_acceleration_available_no_crash
+test_is_macos_platform_detection
+test_prores_codec_all_variants
+tests::test_acceleration_presence_vs_usability
+tests::test_afterburner_reexport
+tests::test_error_reexport
+tests::test_is_acceleration_available_no_panic
+tests::test_is_macos_consistent
+tests::test_prores_codec_reexport
+tests::test_version_not_empty
+test_version_semver_format
+unified_memory::tests::test_allocation_success
+unified_memory::tests::test_allocation_too_large_fails
+unified_memory::tests::test_allocation_zero_fails
+unified_memory::tests::test_convenience_function
+unified_memory::tests::test_copy_from_slice
+unified_memory::tests::test_copy_from_slice_too_large
+unified_memory::tests::test_debug_format
+unified_memory::tests::test_is_uma_available_reports_capability_not_chip_property
+unified_memory::tests::test_large_allocation
+unified_memory::tests::test_multiple_buffers
+unified_memory::tests::test_new_and_zeroed_agree
+unified_memory::tests::test_new_buffer_is_initialized_not_uninit
+unified_memory::tests::test_page_alignment
+unified_memory::tests::test_pointers
+unified_memory::tests::test_read_write
+unified_memory::tests::test_zeroed_buffer
+unified_memory::tests::test_zeroed_constructor

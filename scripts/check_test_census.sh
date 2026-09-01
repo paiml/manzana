@@ -21,7 +21,10 @@
 # Exit 0 = clean, 1 = census violation, 2 = harness failure.
 set -euo pipefail
 
-BASELINE="${BASELINE:-.pmat/test-census.txt}"
+# NOT under .pmat/: .gitignore excludes `**/.pmat/`, so a baseline there is
+# untracked and CI fails with "no baseline" on a clean checkout. The baseline
+# is the ratchet's reference point and must be committed.
+BASELINE="${BASELINE:-.quorum/test-census.txt}"
 UPDATE="${UPDATE:-0}"
 
 die() { printf 'harness failure: %s\n' "$*" >&2; exit 2; }
