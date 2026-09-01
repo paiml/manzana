@@ -108,8 +108,8 @@ src/lib.rs - (line 80)
 src/metal/mod.rs - metal (line 8)
 src/neural_engine/mod.rs - neural_engine (line 20)
 src/neural_engine/mod.rs - neural_engine::NeuralEngineSession::load (line 272)
-src/unified_memory.rs - unified_memory (line 26)
-src/unified_memory.rs - unified_memory::UmaBuffer::new (line 128)
+src/unified_memory/mod.rs - unified_memory (line 26)
+src/unified_memory/mod.rs - unified_memory::UmaBuffer::new (line 143)
 test_afterburner_convenience_function
 test_afterburner_is_available_consistent
 test_afterburner_monitor_graceful_on_missing_hardware
@@ -147,6 +147,7 @@ unified_memory::tests::test_large_allocation
 unified_memory::tests::test_multiple_buffers
 unified_memory::tests::test_new_and_zeroed_agree
 unified_memory::tests::test_new_buffer_is_initialized_not_uninit
+unified_memory::tests::test_page_align_reports_overflow_instead_of_wrapping
 unified_memory::tests::test_page_alignment
 unified_memory::tests::test_pointers
 unified_memory::tests::test_read_write

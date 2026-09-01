@@ -113,35 +113,80 @@ fn main() {
     println!("┌─────────────────────────────────────────────────────────────┐");
     println!("│ Unified Memory Architecture (Apple Silicon)                 │");
     println!("├─────────────────────────────────────────────────────────────┤");
-    if UmaBuffer::is_uma_available() {
-        println!("│ Status: ✓ AVAILABLE                                         │");
-        if let Ok(buffer) = UmaBuffer::new(4096) {
-            println!("│ Page Size: 4096 bytes                                       │");
-            println!(
-                "│ Test Allocation: {} (aligned: {})                        │",
-                if buffer.len() == 4096 { "OK" } else { "FAIL" },
-                if buffer.is_aligned() { "yes" } else { "no" }
-            );
-        }
+    // The chip's unified memory and manzana's ability to USE it are different
+    // questions, and on Apple Silicon they have different answers. Printing
+    // only "Not available" next to a Metal panel reading "UMA: Yes" made this
+    // program appear to contradict itself.
+    let chip_uma = if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+        "yes (Apple Silicon)"
     } else {
-        println!("│ Status: ✗ Not available (requires Apple Silicon)            │");
+        "no"
+    };
+    println!("│ Chip has unified memory:  {chip_uma:<34}│");
+    println!(
+        "│ GPU-visible via manzana:  {:<34}│",
+        "no (not implemented)"
+    );
+    println!("│{:<61}│", "");
+    println!(
+        "│{:<61}│",
+        " UmaBuffer is a page-aligned HOST allocation. It is not an"
+    );
+    println!("│{:<61}│", " MTLBuffer and no GPU can read it.");
+    match UmaBuffer::new(4096) {
+        Ok(buffer) => println!(
+            "│ Host allocation: {:<43}│",
+            format!(
+                "{} bytes, page-aligned: {}",
+                buffer.len(),
+                if buffer.is_aligned() { "yes" } else { "NO" }
+            )
+        ),
+        Err(e) => println!("│ Host allocation failed: {:<36}│", e.to_string()),
     }
     println!("└─────────────────────────────────────────────────────────────┘");
     println!();
 
     // Summary
     println!("╔════════════════════════════════════════════════════════════╗");
+    // PRESENT and USABLE are counted separately. Reporting "2 accelerators
+    // available" for an ANE and a GPU on which no operation can be performed
+    // is the shape of claim this release exists to remove.
+    let present = [
+        AfterburnerMonitor::is_available(),
+        NeuralEngineSession::is_available(),
+        MetalCompute::is_available(),
+    ]
+    .iter()
+    .filter(|&&x| x)
+    .count();
     println!(
-        "║ Summary: {} accelerator(s) available                        ║",
-        [
-            AfterburnerMonitor::is_available(),
-            NeuralEngineSession::is_available(),
-            MetalCompute::is_available(),
-            UmaBuffer::is_uma_available(),
-        ]
-        .iter()
-        .filter(|&&x| x)
-        .count()
+        "║ Detected: {:<49}║",
+        format!("{present} accelerator(s) present")
+    );
+    println!(
+        "║ Usable:   {:<49}║",
+        format!(
+            "{} through manzana today",
+            if manzana::is_acceleration_usable() {
+                "some"
+            } else {
+                "none"
+            }
+        )
+    );
+    println!("║{:<60}║", "");
+    println!(
+        "║{:<60}║",
+        " Implemented: Afterburner stats, Metal enumeration, and"
+    );
+    println!(
+        "║{:<60}║",
+        " page-aligned host buffers. Metal compute, CoreML"
+    );
+    println!(
+        "║{:<60}║",
+        " inference and ANE capability querying are not."
     );
     println!("╚════════════════════════════════════════════════════════════╝");
 }

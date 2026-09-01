@@ -1,6 +1,6 @@
    Compiling manzana v0.3.0 (/private/tmp/manzana-e2e)
 warning: manzana@0.3.0: provable-contracts: 1 binding(s) resolved
-    Finished `test` profile [optimized + debuginfo] target(s) in 0.86s
+    Finished `test` profile [optimized + debuginfo] target(s) in 0.61s
      Running tests/e2e.rs (target/debug/deps/e2e-b4036c4183d97d13)
 
 running 8 tests
@@ -13,5 +13,5 @@ test e2e_no_fabricated_devices ... ok
 test e2e_no_operation_fabricates_a_result ... ok
 test e2e_detection_agrees_with_enumeration ... ok
 
-test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.74s
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.79s
 
