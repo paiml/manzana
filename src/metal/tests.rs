@@ -68,9 +68,27 @@ fn test_is_available_consistent() {
     assert_eq!(available, !devices.is_empty());
 }
 
+/// Every enumerated device must carry sane values -- and there must BE a
+/// device whenever `system_profiler` named one.
+///
+/// The `for device in &devices` loop alone is vacuous on a host with no GPU:
+/// the body never runs and the test passes green having asserted nothing.
+/// Three siblings had that defect and were fixed; this one was missed, and the
+/// CHANGELOG claimed otherwise. The guard below is what makes the loop
+/// non-vacuous, and it is falsifiable on both kinds of host.
 #[test]
 fn test_device_properties() {
     let devices = MetalCompute::devices();
+
+    #[cfg(target_os = "macos")]
+    assert_eq!(
+        !devices.is_empty(),
+        system_profiler_named_a_gpu(),
+        "devices() disagrees with system_profiler about whether a GPU exists"
+    );
+    #[cfg(not(target_os = "macos"))]
+    assert!(devices.is_empty(), "no enumeration exists off macOS");
+
     for device in &devices {
         assert!(!device.name.is_empty());
         assert!(device.max_threads_per_threadgroup > 0);

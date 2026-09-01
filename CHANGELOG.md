@@ -54,8 +54,12 @@ The same pattern existed outside the module named in the advisory:
     the M1's published 15.8 TOPS and 16 cores — on any machine at all. That is
     the exact figure the advisory names, restored by a trait impl after being
     removed from `capabilities()` itself. `impl Default for AneCapabilities` is
-    gone; the figures live behind `AneCapabilities::m1_baseline()`, whose name
-    says whose chip they describe. The old call no longer compiles (E0277).
+    gone. The figures first moved behind a named constructor,
+    `AneCapabilities::m1_baseline()`; then the review pointed out that 15.8 TOPS
+    is the **M2's** published figure, not the M1's, so the constructor's own
+    justification was false and it was deleted too. manzana now states no TOPS
+    and no core count for any Apple part: it cannot measure one and declines to
+    repeat one. `capabilities().unwrap_or_default()` no longer compiles (E0277).
   - `AfterburnerMonitor::stats()` returns `Result`, so
     `stats().unwrap_or_default()` yielded `streams_capacity: 23` — Apple's
     marketed "23 streams of 4K ProRes" — plus zero streams and zero

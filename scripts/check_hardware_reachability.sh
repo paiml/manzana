@@ -221,7 +221,7 @@ for f in "${HW_PATHS[@]}"; do
       sub(/.*fn[[:space:]]+/, "", name); sub(/[(<].*/, "", name)
       qual = (impltype == "") ? name : impltype "::" name
       capturing=1; start=NR; body=""; callbody=""; depth=0; sig=""; insig=1
-      inblock=0
+      inblock=0; instr=0
     }
     capturing {
       line=$0; gsub(/\t/, " ", line)
@@ -230,24 +230,44 @@ for f in "${HW_PATHS[@]}"; do
       # refusing, and a comment naming a boundary-reaching function certified
       # it as reaching -- both limbs satisfiable by prose. Braces inside
       # comments also corrupted the extent counting.
-      # Strings first: a // or /* inside a literal is not a comment.
-      gsub(/"[^"]*"/, "\"\"", line)
-
-      # Block comments, WITH CROSS-LINE STATE. The previous version used the
-      # single-line C-comment regex, which requires the closing */ on the same
-      # record -- so a MULTI-LINE /* */ survived intact into `body`, and both
-      # limbs are text matches over `body`. A fabricating fn whose comment
-      # merely mentioned Error::unimplemented or Command::new passed the gate.
-      # Reproduced: tests/fixtures/quorum/red_multiline_comment.
-      if (inblock) {
-        k = index(line, "*/")
-        if (k == 0) { line = "" } else { line = substr(line, k + 2); inblock = 0 }
+      # ONE pass, tracking both states, in the order rustc does.
+      #
+      # Stripping strings first and comments second gets this wrong: a block
+      # comment containing the text "*/" inside quotes had its terminator
+      # blanked before the comment scanner looked for it, so the scanner
+      # stayed in-comment while rustc had already closed it. That divergence
+      # fails CLOSED here (the swallowed body reaches no boundary and refuses
+      # nothing, so the fn is flagged, not admitted -- verified), but a gate
+      # that disagrees with the compiler about what the code IS will eventually
+      # disagree in the other direction too.
+      #
+      # rustc does not interpret string syntax inside a block comment, and does
+      # not interpret comment syntax inside a string. So neither can be a
+      # separate pass. Both states persist across lines: block comments nest in
+      # source, and Rust string literals may span lines.
+      stripped = ""
+      i = 1
+      n_ = length(line)
+      while (i <= n_) {
+        c  = substr(line, i, 1)
+        c2 = substr(line, i, 2)
+        if (inblock) {
+          if (c2 == "*/") { inblock = 0; i += 2 } else { i += 1 }
+        } else if (instr) {
+          if (c == "\\") { i += 2 }
+          else if (c == "\"") { instr = 0; i += 1 }
+          else { i += 1 }
+        } else if (c2 == "/*") {
+          inblock = 1; i += 2
+        } else if (c2 == "//") {
+          break
+        } else if (c == "\"") {
+          instr = 1; stripped = stripped "\"\""; i += 1
+        } else {
+          stripped = stripped c; i += 1
+        }
       }
-      gsub(/\/\*[^*]*\*+([^\/*][^*]*\*+)*\//, " ", line)
-      k = index(line, "/*")
-      if (k > 0) { line = substr(line, 1, k - 1); inblock = 1 }
-
-      sub(/\/\/.*$/, "", line)
+      line = stripped
       body = body " " line
       if (insig) { sig = sig " " line; if (index(line,"{")>0) insig=0 }
       else { callbody = callbody " " line }
@@ -257,6 +277,16 @@ for f in "${HW_PATHS[@]}"; do
       # claimed the opposite. An unbalanced `{` in a comment left depth>0, and
       # the `depth==0` guard on fn detection then never fired again: every
       # later fn in the file silently vanished from the denominator.
+      # A DECLARATION, not a definition: `fn f(..);` inside an `extern` block
+      # has no body. Capture ran on regardless, hunting for a `{` -- and found
+      # the next real function body, absorbing it into a phantom entry named after
+      # the FFI symbol. src/ffi/iokit.rs:IORegistryEntryGetName was one, and
+      # whatever followed it was attributed to the wrong function. Abandon the
+      # capture when the signature ends in `;` before any brace.
+      if (insig && index(line, ";") > 0 && index(line, "{") == 0) {
+        capturing = 0
+        next
+      }
       n=gsub(/\{/,"{",line); m=gsub(/\}/,"}",line); depth += n - m
       # rr: does the SIGNATURE (not the body) promise a fallible result?
       if (depth<=0 && index(body,"{")>0) {

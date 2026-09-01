@@ -57,24 +57,27 @@ const AFTERBURNER_SERVICE_NAMES: &[&str] = &[
 
 // IOKit entry points.
 //
-// A note on the two dictionary signatures below. In the framework headers
-// `IOServiceMatching` returns `CFMutableDictionaryRef` and
-// `IOServiceGetMatchingService` takes `CFDictionaryRef`; both of those C types
-// are already a single pointer. These declarations spell them
-// `*mut CFDictionaryRef`, one level of indirection deeper. The calls are still
-// correct as written — pointers are all one word wide, and the value
-// `IOServiceMatching` returns is only null-checked and handed straight back to
-// `IOServiceGetMatchingService`, never dereferenced through the extra level —
-// but the declared types do not match the headers, and any future code that
-// dereferences the value would be unsound. `IORegistryEntryCreateCFProperties`
-// is unaffected: its `properties` parameter genuinely is an out-pointer to a
-// `CFDictionaryRef`.
+// The dictionary signatures now match the framework headers.
+//
+// They used to be one level of indirection deeper: `IOServiceMatching` returns
+// `CFMutableDictionaryRef` and `IOServiceGetMatchingService` takes
+// `CFDictionaryRef` -- both already a single pointer -- and both were declared
+// `*mut CFDictionaryRef`. The calls worked, because pointers are one word wide
+// and the value was only null-checked and handed straight back, never
+// dereferenced through the extra level. An earlier revision DOCUMENTED that
+// rather than fixing it, which leaves a trap for the next person to touch this
+// file: dereferencing through the declared type would have been unsound.
+//
+// `IORegistryEntryCreateCFProperties` keeps `*mut CFDictionaryRef`, because its
+// `properties` parameter genuinely is an out-pointer to a `CFDictionaryRef`.
 #[link(name = "IOKit", kind = "framework")]
 extern "C" {
-    fn IOServiceMatching(name: *const i8) -> *mut core_foundation_sys::dictionary::CFDictionaryRef;
+    fn IOServiceMatching(
+        name: *const i8,
+    ) -> core_foundation_sys::dictionary::CFMutableDictionaryRef;
     fn IOServiceGetMatchingService(
         main_port: MachPortT,
-        matching: *mut core_foundation_sys::dictionary::CFDictionaryRef,
+        matching: core_foundation_sys::dictionary::CFDictionaryRef,
     ) -> IoServiceT;
     fn IOObjectRelease(object: u32) -> i32;
     fn IORegistryEntryCreateCFProperties(
