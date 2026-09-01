@@ -66,9 +66,20 @@ fn test_parse_reads_the_vram_line_when_there_is_one() {
     // 16 GiB, because system_profiler prints "GB" and Apple means GiB.
     assert_eq!(d.max_buffer_length, 17_179_869_184);
     assert!((d.vram_gb() - 16.0).abs() < f64::EPSILON);
-    assert!(
-        !d.has_unified_memory,
-        "a PCIe AMD card is not unified memory"
+    assert_eq!(
+        d.reported_vram_bytes,
+        Some(17_179_869_184),
+        "a parsed VRAM line is a measurement and must be recorded as one"
+    );
+    assert_eq!(
+        d.has_unified_memory,
+        cfg!(target_arch = "aarch64"),
+        "has_unified_memory is DERIVED FROM THE BUILD TARGET, not the device: \
+         on an aarch64 build even this PCIe AMD card reports unified memory. \
+         That is documented in the README's field table, and this assertion \
+         exists so the derivation cannot quietly change into a measurement \
+         claim -- an earlier version asserted `false` unconditionally and \
+         passed only because it never ran on Apple Silicon."
     );
 }
 
@@ -158,9 +169,15 @@ fn test_parse_reads_a_vram_line_in_mb() {
     let d = &devices[0];
     assert_eq!(d.name, "NVIDIA GeForce GT 750M");
     assert_eq!(d.max_buffer_length, 2048 * 1_048_576);
-    assert!(
-        !d.has_unified_memory,
-        "a discrete NVIDIA card is not unified memory"
+    assert_eq!(
+        d.reported_vram_bytes,
+        Some(2048 * 1_048_576),
+        "the MB branch is a measurement too"
+    );
+    assert_eq!(
+        d.has_unified_memory,
+        cfg!(target_arch = "aarch64"),
+        "derived from the build target, not the device -- see the sibling test"
     );
 }
 
@@ -179,11 +196,31 @@ fn test_parse_leaves_the_default_when_vram_does_not_parse() {
         );
         let devices = detect::parse_displays(&input);
         assert_eq!(devices.len(), 1, "{bad}: expected exactly one device");
+
+        // The property that matters, and it is platform-independent: NOTHING
+        // was measured, so nothing may be reported as measured.
         assert_eq!(
-            devices[0].max_buffer_length, 4_294_967_296,
-            "{bad}: an unreadable VRAM line must fall to the documented \
-             non-Apple default, never to a value invented from the text"
+            devices[0].reported_vram_bytes, None,
+            "{bad}: an unreadable VRAM line is not a measurement"
         );
+
+        // The usable figure falls to a documented CONSTANT. Which constant
+        // depends on the build target, because `create_device` treats any
+        // aarch64 build as Apple Silicon -- so this cannot be a single
+        // hardcoded number, and asserting 4 GiB unconditionally is what made
+        // this test fail the moment it first ran on the M4.
+        let expected = if cfg!(target_arch = "aarch64") {
+            17_179_869_184_u64
+        } else {
+            4_294_967_296
+        };
+        assert_eq!(
+            devices[0].max_buffer_length, expected,
+            "{bad}: must fall to the documented default for this build"
+        );
+        // And in particular it is NOT a number derived from the text: 1.5 GB
+        // would be 1_610_612_736.
+        assert_ne!(devices[0].max_buffer_length, 1_610_612_736);
     }
 }
 

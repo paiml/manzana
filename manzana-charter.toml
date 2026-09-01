@@ -104,6 +104,13 @@ paths = [
     "src/metal/types.rs",
     "src/afterburner/stats.rs",
     "src/error/subsystem.rs",
+    # Test-only module (`#[cfg(test)] mod parse_tests;`), split out of
+    # src/metal/tests.rs to keep both files inside the 500-line health limit.
+    # Listed here so the charter-mapping check stays exhaustive: an unmapped
+    # module is invisible to the reachability gate, and that silent hole is the
+    # missing-denominator defect the mapping check exists to stop. The gate
+    # correctly flagged this file the moment it was created.
+    "src/metal/parse_tests.rs",
 ]
 
 # Surfaces judged OUT of charter — a maintained Rust crate already covers them.

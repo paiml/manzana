@@ -164,15 +164,19 @@ fn test_no_fabricated_device_when_detection_fails() {
     // "Apple GPU". The whole body of this test used to sit under
     // cfg(not(target_os = "macos")), so on macOS -- the ONLY host where
     // fallback_device() is reachable at all -- it was empty and passed
-    // vacuously. Asserted directly instead, on every platform.
-    // fallback_device() is itself cfg(target_os = "macos"), so it can only be
-    // asserted there -- which is also the only platform where it is reachable,
-    // and where restoring its 0.2.0 fabricating body would otherwise go
-    // undetected by the whole suite.
+    // vacuously.
+    //
+    // It calls detect::fallback_device directly. The MetalCompute wrapper it
+    // used to call was dead code (the macOS-only dead-code warning that
+    // contradicted the README's "Clippy: 0 warnings") and is gone.
+    //
+    // The same anti-fabrication property is ALSO asserted cross-platform by
+    // parse_tests::test_parse_invents_no_device_when_nothing_is_reported,
+    // which needs no macOS host.
     #[cfg(target_os = "macos")]
     {
         assert!(
-            MetalCompute::fallback_device().is_empty(),
+            detect::fallback_device().is_empty(),
             "fallback_device() must fabricate nothing; it invented an \"Apple GPU\" in 0.2.0"
         );
     }

@@ -125,14 +125,19 @@ fn metal_panel() -> Vec<manzana::MetalDevice> {
             row(&format!(
                 "  VRAM: {:.1} GiB {}",
                 device.vram_gb(),
+                // Kept short deliberately: `row` truncates to the box width,
+                // and the first capture of this on the M4 came out as
+                // "(manzana's default -- system_profiler pri…", losing the
+                // half that mattered. A provenance label that gets cut off is
+                // not a provenance label.
                 if device.reported_vram_bytes.is_some() {
-                    "(read from the system_profiler VRAM line)"
+                    "(read from system_profiler)"
                 } else {
-                    "(manzana's default -- system_profiler printed no VRAM line)"
+                    "(manzana default, not read)"
                 }
             ));
             row(&format!(
-                "  Unified memory: {} (inferred from the name)",
+                "  Unified memory: {} (name / build target)",
                 yes_no(device.has_unified_memory)
             ));
             row("  registry_id, thread limits and headless flag are");
@@ -140,9 +145,9 @@ fn metal_panel() -> Vec<manzana::MetalDevice> {
         }
     }
     row("");
-    row("Implemented: enumeration (name, VRAM). Shader compilation,");
-    row("buffer allocation and dispatch are not - see the");
-    row("metal_compute example for their refusals.");
+    row("Implemented: enumeration (name; VRAM when reported).");
+    row("Shader compilation, buffer allocation and dispatch are");
+    row("not - see the metal_compute example for their refusals.");
     println!("{BOT}");
     println!();
     devices

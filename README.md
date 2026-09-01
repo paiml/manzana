@@ -326,22 +326,68 @@ reported no GPU here. Requires macOS with a Metal-capable GPU.
 
 ### Apple M4, macOS 26.5.2
 
-**Not captured at this revision.** The M4 in the test matrix was unreachable
-when the VRAM-provenance fix landed, so the block that used to sit here — which
-read `VRAM: 16.0 GB (from system_profiler)` for a figure `system_profiler` never
-printed — has been removed rather than edited to what it *would* now say.
+Captured by running `cargo run --example hardware_discovery` on the M4 in the
+test matrix. The VRAM line is the point:
 
-Pasting output nobody ran is the defect this crate exists to remove, so this
-section stays empty until the example is re-run on the M4. Reproduce it with:
-
-```console
-$ cargo run --example hardware_discovery
-$ cargo run --example metal_compute
+```text
+┌─────────────────────────────────────────────────────────────┐
+│ Metal GPU                                                   │
+├─────────────────────────────────────────────────────────────┤
+│ Present: yes (1 device(s) enumerated)                       │
+│                                                             │
+│ GPU 0: Apple M4                                             │
+│   VRAM: 16.0 GiB (manzana default, not read)                │
+│   Unified memory: yes (name / build target)                 │
+│   registry_id, thread limits and headless flag are          │
+│   synthesized or hardcoded; see the MetalDevice docs.       │
+│                                                             │
+│ Implemented: enumeration (name; VRAM when reported).        │
+│ Shader compilation, buffer allocation and dispatch are      │
+│ not - see the metal_compute example for their refusals.     │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-The macOS lane is still exercised every commit: GitHub Actions runs the full
-suite on `macos-latest`, and `scripts/e2e_matrix.sh` runs it on the M4 whenever
-that host is up.
+`system_profiler` prints no `VRAM` line for unified memory, so
+`MetalDevice::reported_vram_bytes` is `None` and the panel says the figure is
+manzana's default rather than a reading. Until 0.3.0 this same line read
+`VRAM: 16.0 GB (from system_profiler)` — a crate constant with a hardware
+source attached to it.
+
+`cargo run --example metal_compute` on the same host:
+
+```text
+Found 1 Metal device(s):
+
+┌─────────────────────────────────────────────────────────────┐
+│ GPU 0: Apple M4                                             │
+├─────────────────────────────────────────────────────────────┤
+│ Read from system_profiler:                                  │
+│   Name:  Apple M4                                           │
+│   VRAM:  not reported for this device                       │
+│                                                             │
+│ Not queried from the device - synthesized or derived:       │
+│   VRAM:               16.0 GiB (manzana default, not read)  │
+│   Registry ID:        1 (enumeration index + 1)             │
+│   Max threads/group:  1024 (hardcoded literal)              │
+│   Headless:           false (never determined)              │
+│   Low power:          false (from the name string)          │
+│   Unified memory:     true (from the name / build target)   │
+└─────────────────────────────────────────────────────────────┘
+
+Compute pipeline:
+  default_device  -> Apple M4
+  compile_shader  -> operation not implemented: shader compilation (requires MTLDevice::newLibraryWithSource) (Metal GPU)
+  allocate_buffer -> operation not implemented: buffer allocation (requires MTLDevice::newBufferWithLength) (Metal GPU)
+  dispatch        -> cannot be attempted: it takes a CompiledShader
+                     and MetalBuffers, and neither can be obtained.
+                     Called directly it returns the same refusal.
+
+Enumeration above is real, parsed from `system_profiler`.
+Shader compilation, buffer allocation and dispatch are not
+implemented: they return Error::Unimplemented on every platform,
+for every argument, rather than a value that resembles a result.
+See docs/specifications/security-architecture-plan.md
+```
 
 The Neural Engine panel prints no TOPS or core count, because `capabilities()`
 returns `None` rather than a datasheet figure. `metal_compute` enumerates the
@@ -427,8 +473,8 @@ the buffer initialized before any reference to it can exist.
 
 | Metric | Value |
 |---|---|
-| Tests | 205 on Linux, 212 on macOS arm64, plus 62 doctests on each. 0 ignored on both |
-| Line coverage | 95.78%, against a 95% floor enforced by `make coverage-gate` |
+| Tests | 214 on Linux, 221 on macOS arm64, plus 62 doctests on each. 0 ignored on both |
+| Line coverage | 96.16%, against a 95% floor enforced by `make coverage-gate` |
 | Clippy | 0 warnings with `pedantic` + `nursery` on `--all-targets --all-features` |
 | Unsafe code | `src/ffi/iokit.rs`, `src/unified_memory/mod.rs` |
 

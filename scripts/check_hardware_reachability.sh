@@ -54,6 +54,23 @@ matches_bare_call() {
 # read_array <table-header> <key>
 read_array() {
   awk -v hdr="$1" -v key="$2" '
+    # Strip TOML comments FIRST, outside any string. Without this a `]`
+    # inside a comment ended the array early and every entry after it was
+    # silently dropped -- a comment reading "#[cfg(test)] mod parse_tests;"
+    # truncated [support_modules] and the charter-mapping check then reported
+    # the file it had just been told about as UNMAPPED. A parser that silently
+    # discards half its own input is the same defect class as a gate that
+    # silently passes, sitting one level further down.
+    {
+      line=$0; out=""; inq=0
+      for (i=1; i<=length(line); i++) {
+        c=substr(line,i,1)
+        if (c=="\"") inq=!inq
+        if (c=="#" && !inq) break
+        out=out c
+      }
+      $0=out
+    }
     $0 ~ "^\\[" hdr "\\]" { intable=1; next }
     /^\[/ { intable=0 }
     intable && $0 ~ "^[[:space:]]*" key "[[:space:]]*=" { collecting=1 }
