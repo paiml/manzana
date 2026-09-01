@@ -215,9 +215,15 @@ impl AfterburnerService {
     /// # Errors
     ///
     /// [`Error::IoKit`] if `IORegistryEntryCreateCFProperties` fails, or if it
-    /// succeeds and returns a null dictionary. Nothing else fails: a registry
-    /// missing every property manzana looks for parses into
-    /// [`AfterburnerRawStats`] fallbacks rather than an error.
+    /// succeeds and returns a null dictionary. Nothing else fails *here*: a
+    /// registry missing every property manzana looks for yields an
+    /// [`AfterburnerRawStats`] whose fields are all `None`, which this layer
+    /// reports faithfully. `crate::afterburner` is where a `None` in a required
+    /// field becomes `Err`.
+    ///
+    /// This sentence used to say the missing properties took "fallbacks rather
+    /// than an error". That was the seventh copy of one claim, and the last one
+    /// standing after the other six were corrected.
     pub fn get_stats(&self) -> Result<AfterburnerRawStats, Error> {
         let properties = self.get_properties()?;
         Ok(parse_afterburner_properties(&properties))

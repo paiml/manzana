@@ -1,7 +1,7 @@
-   Compiling manzana v0.3.0 (/tmp/manzana-e2e)
-warning: manzana@0.3.0: provable-contracts: 1 binding(s) resolved
-    Finished `test` profile [optimized + debuginfo] target(s) in 0.77s
-     Running tests/e2e.rs (target/debug/deps/e2e-0e4cd33feaf4e946)
+   Compiling manzana v0.3.1 (/tmp/manzana-e2e)
+warning: manzana@0.3.1: provable-contracts: 1 binding(s) resolved
+    Finished `test` profile [optimized + debuginfo] target(s) in 1.10s
+     Running tests/e2e.rs (target/debug/deps/e2e-1764bb6c310381f8)
 
 running 7 tests
 test e2e_detection_agrees_with_enumeration ... ok
