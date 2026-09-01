@@ -25,7 +25,7 @@ spec = "docs/specifications/security-architecture-plan.md"
 # makes a fabricated return value unrepresentable rather than merely tested-for.
 [hardware_modules]
 paths = [
-    "src/neural_engine.rs",
+    "src/neural_engine/mod.rs",
     "src/metal/mod.rs",
     "src/unified_memory.rs",
     "src/afterburner.rs",

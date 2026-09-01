@@ -189,3 +189,69 @@ fn test_metal_buffer_methods() {
     };
     assert!(empty_buffer.is_empty());
 }
+
+// ---------------------------------------------------------------------------
+// Pure accessors on the value types. On a host with no Metal device these are
+// unreachable through `devices()`, so they are constructed directly here.
+// They compute from data they were handed and claim no hardware.
+// ---------------------------------------------------------------------------
+
+fn sample_device(unified: bool, max_buffer: u64) -> MetalDevice {
+    MetalDevice {
+        name: String::from("Test GPU"),
+        registry_id: 42,
+        is_low_power: false,
+        is_headless: false,
+        max_threads_per_threadgroup: 1024,
+        max_buffer_length: max_buffer,
+        has_unified_memory: unified,
+        index: 0,
+    }
+}
+
+#[test]
+fn test_device_is_apple_silicon_follows_unified_memory() {
+    assert!(sample_device(true, 1 << 30).is_apple_silicon());
+    assert!(!sample_device(false, 1 << 30).is_apple_silicon());
+}
+
+#[test]
+fn test_device_vram_gb_converts_bytes() {
+    let one_gib = 1_073_741_824u64;
+    assert!((sample_device(true, one_gib).vram_gb() - 1.0).abs() < f64::EPSILON);
+    assert!((sample_device(true, one_gib * 8).vram_gb() - 8.0).abs() < f64::EPSILON);
+    assert!((sample_device(true, 0).vram_gb() - 0.0).abs() < f64::EPSILON);
+}
+
+#[test]
+fn test_compiled_shader_name_accessor() {
+    let sh = CompiledShader {
+        name: String::from("vector_add"),
+        source_hash: 0,
+    };
+    assert_eq!(sh.name(), "vector_add");
+}
+
+#[test]
+fn test_compute_accessors() {
+    let c = any_compute();
+    // device_index is whatever it was constructed with; device_name is non-empty.
+    assert_eq!(c.device_index(), 0);
+    assert!(!c.device_name().is_empty());
+}
+
+#[test]
+fn test_metal_buffer_accessors() {
+    let b = MetalBuffer {
+        length: 2048,
+        device_index: 3,
+    };
+    assert_eq!(b.len(), 2048);
+    assert!(!b.is_empty());
+    assert_eq!(b.device_index(), 3);
+    let empty = MetalBuffer {
+        length: 0,
+        device_index: 0,
+    };
+    assert!(empty.is_empty());
+}

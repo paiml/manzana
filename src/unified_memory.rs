@@ -305,6 +305,13 @@ pub fn is_available() -> bool {
 #[allow(clippy::unwrap_used)]
 #[allow(clippy::expect_used)]
 mod tests {
+    #[test]
+    fn test_zeroed_constructor() {
+        let b = UmaBuffer::zeroed(8192).expect("allocation");
+        assert_eq!(b.len(), 8192);
+        assert!(b.as_slice().iter().all(|&x| x == 0));
+        assert!(b.is_aligned());
+    }
 
     // Regression: `new()` used plain `alloc()`, leaving the buffer
     // uninitialized. `as_slice()` is a SAFE method that builds a `&[u8]` over

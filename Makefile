@@ -31,7 +31,7 @@ test-unit:
 # =============================================================================
 # TIER 2: ON-COMMIT (1-5 minutes)
 # =============================================================================
-tier2: fmt-check lint test coverage-check audit deny quorum
+tier2: fmt-check lint test coverage-check coverage-gate audit deny quorum
 	@echo "✅ Tier 2 passed (on-commit validation)"
 
 fmt-check:
@@ -51,6 +51,30 @@ test-fast:
 test:
 	@echo "🧪 Running all tests..."
 	cargo test --all-targets
+
+COVERAGE_FLOOR ?= 95.0
+
+coverage-gate:
+	@echo "📊 Coverage floor ($(COVERAGE_FLOOR)% lines)..."
+	@# The floor is passed into awk, so the printed message cannot drift from
+	@# the comparison. A gate whose message and check disagree is how a false
+	@# claim survives review.
+	@cargo llvm-cov --all-features --summary-only 2>/dev/null | \
+		awk -v floor=$(COVERAGE_FLOOR) '/^TOTAL/ { \
+			seen=1; pct=$$10; gsub(/%/,"",pct); \
+			printf "   lines: %s%% (floor %s%%)\n", pct, floor; \
+			if (pct+0 < floor+0) { \
+				printf "\033[0;31m   FAIL: %s%% is below the %s%% floor\033[0m\n", pct, floor; \
+				exit 1 \
+			} \
+			printf "\033[0;32m   PASS\033[0m\n" \
+		} END { if (!seen) { \
+			printf "\033[0;31m   FAIL: no TOTAL row parsed -- coverage was not measured\033[0m\n"; \
+			exit 1 } }'
+
+e2e:
+	@echo "🔌 End-to-end matrix (real hardware)..."
+	./scripts/e2e_matrix.sh
 
 coverage-check:
 	@echo "📊 Checking coverage (target: 95%)..."
@@ -107,7 +131,7 @@ deny:
 # =============================================================================
 # TIER 3: ON-MERGE (Hours - exhaustive QA)
 # =============================================================================
-tier3: tier2 mutation miri bench doc
+tier3: tier2 mutation miri bench doc e2e
 	@echo "✅ Tier 3 passed (on-merge exhaustive QA)"
 
 mutation:

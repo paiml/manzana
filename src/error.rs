@@ -139,12 +139,37 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 impl Error {
     /// Create a new `NotAvailable` error.
+    ///
+    /// Use this when hardware genuinely is not present. It is a claim about
+    /// the machine, so do not use it for "manzana has not implemented this" --
+    /// that is [`Error::unimplemented`], and conflating the two hides which
+    /// one actually happened.
+    ///
+    /// ```
+    /// use manzana::error::{Error, Subsystem};
+    ///
+    /// let e = Error::not_available(Subsystem::Metal);
+    /// assert!(e.is_not_available());
+    /// assert!(!e.is_unimplemented());
+    /// assert_eq!(e.to_string(), "hardware not available: Metal GPU");
+    /// ```
     #[must_use]
     pub const fn not_available(subsystem: Subsystem) -> Self {
         Self::NotAvailable { subsystem }
     }
 
     /// Create a new `IoKit` error from a kern_return_t code.
+    ///
+    /// The `kern_return_t` is preserved so a caller can act on it rather than
+    /// only print it.
+    ///
+    /// ```
+    /// use manzana::error::Error;
+    ///
+    /// let e = Error::iokit(-536_870_206, "service not found");
+    /// assert_eq!(e.error_code(), Some(-536_870_206));
+    /// assert!(e.to_string().contains("service not found"));
+    /// ```
     #[must_use]
     pub fn iokit(code: i32, message: impl Into<String>) -> Self {
         Self::IoKit {
@@ -176,6 +201,17 @@ impl Error {
     }
 
     /// Create a new `InvalidInput` error.
+    ///
+    /// For caller mistakes, as opposed to a missing backend.
+    ///
+    /// ```
+    /// use manzana::error::Error;
+    ///
+    /// let e = Error::invalid_input("buffer length cannot be zero");
+    /// assert!(!e.is_unimplemented());
+    /// assert_eq!(e.error_code(), None);
+    /// assert!(e.to_string().starts_with("invalid input:"));
+    /// ```
     #[must_use]
     pub fn invalid_input(reason: impl Into<String>) -> Self {
         Self::InvalidInput {
@@ -184,6 +220,14 @@ impl Error {
     }
 
     /// Create a new `Timeout` error.
+    ///
+    /// ```
+    /// use manzana::error::Error;
+    ///
+    /// let e = Error::timeout(5_000);
+    /// assert!(e.is_timeout());
+    /// assert!(e.to_string().contains("5000ms"));
+    /// ```
     #[must_use]
     pub const fn timeout(duration_ms: u64) -> Self {
         Self::Timeout { duration_ms }
@@ -198,6 +242,19 @@ impl Error {
     }
 
     /// Create a new `NotFound` error.
+    ///
+    /// A claim that a lookup happened and came back empty. Do not use it for
+    /// an operation that never looked -- 0.2.0's `load()` returned `NotFound`
+    /// without querying anything, which told callers a keychain had been
+    /// searched when none had.
+    ///
+    /// ```
+    /// use manzana::error::Error;
+    ///
+    /// let e = Error::not_found("model file: /tmp/missing.mlmodelc");
+    /// assert!(!e.is_unimplemented());
+    /// assert!(e.to_string().contains("resource not found"));
+    /// ```
     #[must_use]
     pub fn not_found(resource: impl Into<String>) -> Self {
         Self::NotFound {
@@ -214,6 +271,19 @@ impl Error {
     }
 
     /// Create a new `Unimplemented` error.
+    ///
+    /// The crate's governing rule: an operation that cannot reach the hardware
+    /// it claims to use returns this rather than a plausible-looking value.
+    ///
+    /// ```
+    /// use manzana::error::{Error, Subsystem};
+    ///
+    /// let e = Error::unimplemented(Subsystem::Metal, "compute dispatch");
+    /// assert!(e.is_unimplemented());
+    /// // Distinct from "the hardware is missing": the GPU may well be there.
+    /// assert!(!e.is_not_available());
+    /// assert!(e.to_string().contains("compute dispatch"));
+    /// ```
     #[must_use]
     pub fn unimplemented(subsystem: Subsystem, operation: impl Into<String>) -> Self {
         Self::Unimplemented {
@@ -229,6 +299,17 @@ impl Error {
     }
 
     /// Check if this error indicates the operation is not implemented.
+    ///
+    /// The predicate callers should branch on to distinguish "manzana cannot
+    /// do this" from every other failure.
+    ///
+    /// ```
+    /// use manzana::error::{Error, Subsystem};
+    ///
+    /// assert!(Error::unimplemented(Subsystem::NeuralEngine, "inference").is_unimplemented());
+    /// assert!(!Error::invalid_input("bad shape").is_unimplemented());
+    /// assert!(!Error::not_available(Subsystem::Afterburner).is_unimplemented());
+    /// ```
     #[must_use]
     pub const fn is_unimplemented(&self) -> bool {
         matches!(self, Self::Unimplemented { .. })

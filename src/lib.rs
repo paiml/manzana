@@ -150,6 +150,23 @@ pub fn is_acceleration_usable() -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn test_acceleration_presence_vs_usability() {
+        // Presence and usability are different questions, and on Apple Silicon
+        // they disagree: the ANE and GPU are detected, yet every operation on
+        // them returns Unimplemented.
+        let present = super::is_acceleration_available();
+        let usable = super::is_acceleration_usable();
+        if usable {
+            assert!(present, "usable implies present");
+        }
+        // Usability follows only the genuinely implemented subsystems.
+        assert_eq!(
+            usable,
+            super::afterburner::is_available() || super::unified_memory::is_available()
+        );
+    }
+
     use super::*;
 
     #[test]

@@ -196,6 +196,22 @@ pub struct NeuralEngineSession {
 }
 
 impl NeuralEngineSession {
+    /// Construct a session for tests only, bypassing `load`.
+    ///
+    /// `load` always fails in this release, so no session can be obtained
+    /// through the public API and `infer`/`model_path` are unreachable from
+    /// any test. Mutation testing on the (now deleted) secure_enclave module
+    /// showed what that costs: `delete -> Ok(())` survived because nothing
+    /// could reach it. An unreachable method is not a safe method -- if a
+    /// construction path returns, these bodies go live exactly as they are.
+    #[cfg(test)]
+    fn for_refusal_tests(model_path: &str) -> Self {
+        Self {
+            model_path: model_path.to_string(),
+            _not_send_sync: std::marker::PhantomData,
+        }
+    }
+
     /// Check if Neural Engine is available on this system.
     ///
     /// Returns `true` on Apple Silicon Macs, `false` on Intel Macs.
@@ -319,149 +335,4 @@ pub fn is_available() -> bool {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
-#[allow(clippy::expect_used)]
-mod tests {
-    use super::*;
-
-    // F031/F032: Platform detection.
-    //
-    // The previous version bound the result and discarded it, so it asserted
-    // nothing and could not fail. Detection here is a compile-time target
-    // check, so its expected value is known exactly on every platform.
-    #[test]
-    fn test_is_available_matches_build_target() {
-        let expected = cfg!(all(target_os = "macos", target_arch = "aarch64"));
-        assert_eq!(
-            NeuralEngineSession::is_available(),
-            expected,
-            "ANE availability must follow the build target exactly"
-        );
-    }
-
-    #[test]
-    fn test_capabilities_never_fabricates_device_specs() {
-        // Must be None on every platform: earlier versions returned the M1
-        // baseline (15.8 TOPS, 16 cores) on any Apple Silicon chip, which is
-        // a published figure for one device presented as a measurement of
-        // whichever device the caller happens to be running on.
-        assert!(
-            NeuralEngineSession::capabilities().is_none(),
-            "capability querying is not implemented; it must not guess"
-        );
-    }
-
-    #[test]
-    fn test_capabilities_legacy_shape_still_available_as_placeholder() {
-        // AneCapabilities::default() remains for callers who explicitly want
-        // the documented M1 baseline. That is fine: they asked for a constant.
-        let baseline = AneCapabilities::default();
-        assert!((baseline.tops - 15.8).abs() < f64::EPSILON);
-        assert_eq!(baseline.chip_generation, "Unknown");
-    }
-
-    #[test]
-    fn test_capabilities_default_values() {
-        let caps = AneCapabilities::default();
-        assert!(caps.tops > 0.0);
-        assert!(caps.max_batch_size > 0);
-        assert!(!caps.supported_ops.is_empty());
-        assert!(caps.core_count > 0);
-    }
-
-    #[test]
-    fn test_ane_op_display() {
-        assert_eq!(AneOp::Convolution.to_string(), "Convolution");
-        assert_eq!(AneOp::MatMul.to_string(), "MatMul");
-        assert_eq!(AneOp::Attention.to_string(), "Attention");
-    }
-
-    #[test]
-    fn test_tensor_new_valid() {
-        let tensor = Tensor::new(vec![2, 3], vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
-        assert!(tensor.is_ok());
-        let tensor = tensor.unwrap();
-        assert_eq!(tensor.numel(), 6);
-        assert_eq!(tensor.ndim(), 2);
-    }
-
-    #[test]
-    fn test_tensor_new_invalid_size() {
-        let tensor = Tensor::new(vec![2, 3], vec![1.0, 2.0]); // Wrong size
-        assert!(tensor.is_err());
-    }
-
-    #[test]
-    fn test_tensor_zeros() {
-        let tensor = Tensor::zeros(vec![2, 3, 4]);
-        assert_eq!(tensor.numel(), 24);
-        assert_eq!(tensor.ndim(), 3);
-        assert!(tensor.data.iter().all(|&x| x == 0.0));
-    }
-
-    #[test]
-    fn test_load_is_unimplemented_not_fabricated() {
-        // A well-formed path with a valid extension must still refuse: the
-        // model is never opened, so reporting a loaded session would be a
-        // statement about the filename, not the model.
-        let err = NeuralEngineSession::load(Path::new("/nonexistent/model.mlmodel"))
-            .expect_err("model loading is not implemented");
-        assert!(err.is_unimplemented(), "got {err:?}");
-    }
-
-    #[test]
-    fn test_load_rejects_bad_extension_distinctly() {
-        let err = NeuralEngineSession::load(Path::new("notes.txt"))
-            .expect_err("wrong extension must be rejected");
-        assert!(matches!(err, Error::InvalidInput { .. }), "got {err:?}");
-    }
-
-    #[test]
-    fn test_infer_refuses_rather_than_returning_zeros() {
-        // Guards the specific defect: infer() must not return a shaped
-        // all-zero tensor that a caller could mistake for a real result.
-        // No session can be constructed, so the refusal is enforced upstream.
-        assert!(NeuralEngineSession::load(Path::new("model.mlmodelc")).is_err());
-    }
-
-    #[test]
-    fn test_convenience_function() {
-        assert_eq!(is_available(), NeuralEngineSession::is_available());
-    }
-
-    #[test]
-    fn test_ane_op_equality() {
-        assert_eq!(AneOp::Convolution, AneOp::Convolution);
-        assert_ne!(AneOp::Convolution, AneOp::MatMul);
-    }
-
-    #[test]
-    fn test_ane_op_hash() {
-        use std::collections::HashSet;
-        let mut set = HashSet::new();
-        set.insert(AneOp::Convolution);
-        set.insert(AneOp::MatMul);
-        assert_eq!(set.len(), 2);
-    }
-}
-
-#[cfg(test)]
-mod contract_binding {
-    //! Proves the `#[contract]` annotation on `Tensor::new` is BOUND.
-    //!
-    //! The macro expands to `option_env!("CONTRACT_MANZANA_TENSOR_V1_NEW")`.
-    //! With no build script that is `None` and the annotation proves nothing --
-    //! which is exactly what manzana shipped. build.rs now sets the variable
-    //! only after checking the contract file and equation both exist, so a
-    //! `Some` here is evidence the binding resolved.
-
-    #[test]
-    fn test_contract_binding_is_live() {
-        assert_eq!(
-            option_env!("CONTRACT_MANZANA_TENSOR_V1_NEW"),
-            Some("bound"),
-            "the manzana-tensor-v1/new contract binding did not resolve; the \
-             #[contract] attribute on Tensor::new would be decorative"
-        );
-    }
-}
+mod tests;

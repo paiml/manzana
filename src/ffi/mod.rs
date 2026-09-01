@@ -82,7 +82,26 @@ pub mod iokit {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
+#[allow(clippy::expect_used)]
 mod tests {
+    // The non-macOS stub reports absence rather than inventing stats. It is
+    // unreachable via find_afterburner_service (which returns None), so the
+    // service value is constructed directly to exercise the refusal.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn test_non_macos_get_stats_reports_absence() {
+        use super::iokit::AfterburnerService;
+        let svc = AfterburnerService;
+        let err = svc.get_stats().expect_err("there is no IOKit here");
+        assert!(err.is_not_available(), "got {err:?}");
+        assert!(
+            !err.is_unimplemented(),
+            "absent hardware is not an unimplemented op"
+        );
+        assert!(super::iokit::find_afterburner_service().is_none());
+    }
+
     #[test]
     fn test_module_compiles() {
         // Verifies the module structure is correct
