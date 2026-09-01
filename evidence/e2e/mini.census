@@ -2,7 +2,9 @@ afterburner::tests::test_convert_raw_stats_clamps_negative_utilization
 afterburner::tests::test_convert_raw_stats_clamps_utilization
 afterburner::tests::test_convert_raw_stats_filters_invalid_power
 afterburner::tests::test_convert_raw_stats_filters_invalid_temperature
+afterburner::tests::test_convert_raw_stats_requires_reported_keys
 afterburner::tests::test_default_stats_zero_streams
+afterburner::tests::test_each_required_key_is_individually_required
 afterburner::tests::test_is_available_static
 afterburner::tests::test_new_graceful_on_missing_hardware
 afterburner::tests::test_prores_codec_display
@@ -40,7 +42,7 @@ error::tests::test_subsystem_display
 ffi::iokit::tests::test_find_afterburner_graceful_on_missing
 ffi::iokit::tests::test_raw_stats_clone
 ffi::iokit::tests::test_raw_stats_debug
-ffi::iokit::tests::test_raw_stats_default
+ffi::iokit::tests::test_raw_stats_default_reports_nothing_measured
 ffi::iokit::tests::test_service_names_not_empty
 ffi::tests::test_module_compiles
 metal::tests::test_allocate_buffer_is_unimplemented
@@ -85,7 +87,6 @@ prop_capacity_zero_means_zero_percent
 prop_error_clone_equals
 prop_error_code_iokit
 prop_error_code_none_for_others
-prop_error_code_security
 prop_error_display_readable
 prop_is_active_iff_streams_positive
 prop_is_not_available_only_for_variant
@@ -100,23 +101,66 @@ prop_tensor_overflowing_shape_is_rejected_not_panicking
 prop_uma_allocated_ge_requested
 prop_uma_buffer_alignment
 prop_uma_buffer_length_preserved
-src/afterburner.rs - afterburner (line 9)
-src/afterburner.rs - afterburner::AfterburnerMonitor::new (line 161)
-src/afterburner.rs - afterburner::AfterburnerMonitor::stats (line 188)
-src/error.rs - error::Error::invalid_input (line 207)
-src/error.rs - error::Error::iokit (line 166)
-src/error.rs - error::Error::is_unimplemented (line 306)
-src/error.rs - error::Error::not_available (line 148)
-src/error.rs - error::Error::not_found (line 251)
-src/error.rs - error::Error::timeout (line 224)
-src/error.rs - error::Error::unimplemented (line 278)
-src/lib.rs - (line 31)
-src/lib.rs - (line 80)
-src/metal/mod.rs - metal (line 8)
+src/afterburner/mod.rs - afterburner (line 52)
+src/afterburner/mod.rs - afterburner::AfterburnerMonitor::is_active (line 211)
+src/afterburner/mod.rs - afterburner::AfterburnerMonitor::is_available (line 235)
+src/afterburner/mod.rs - afterburner::AfterburnerMonitor::new (line 137)
+src/afterburner/mod.rs - afterburner::AfterburnerMonitor::stats (line 176)
+src/afterburner/mod.rs - afterburner::is_available (line 300)
+src/afterburner/stats.rs - afterburner::stats::AfterburnerStats (line 85)
+src/afterburner/stats.rs - afterburner::stats::AfterburnerStats::capacity_used_percent (line 186)
+src/afterburner/stats.rs - afterburner::stats::AfterburnerStats::is_active (line 161)
+src/afterburner/stats.rs - afterburner::stats::AfterburnerStats::is_temperature_safe (line 224)
+src/afterburner/stats.rs - afterburner::stats::ProResCodec (line 17)
+src/error/mod.rs - error (line 23)
+src/error/mod.rs - error::Error::error_code (line 481)
+src/error/mod.rs - error::Error::invalid_input (line 319)
+src/error/mod.rs - error::Error::iokit (line 272)
+src/error/mod.rs - error::Error::is_not_available (line 427)
+src/error/mod.rs - error::Error::is_unimplemented (line 444)
+src/error/mod.rs - error::Error::not_available (line 254)
+src/error/mod.rs - error::Error::not_found (line 368)
+src/error/mod.rs - error::Error::timeout (line 340)
+src/error/mod.rs - error::Error::unimplemented (line 401)
+src/error/subsystem.rs - error::subsystem::Subsystem (line 10)
+src/lib.rs - (line 113)
+src/lib.rs - (line 78)
+src/lib.rs - (line 96)
+src/lib.rs - VERSION (line 227)
+src/lib.rs - is_acceleration_available (line 257)
+src/lib.rs - is_acceleration_usable (line 282)
+src/lib.rs - is_macos (line 237)
+src/metal/mod.rs - metal (line 41)
+src/metal/mod.rs - metal::MetalCompute (line 129)
+src/metal/mod.rs - metal::MetalCompute::allocate_buffer (line 371)
+src/metal/mod.rs - metal::MetalCompute::compile_shader (line 327)
+src/metal/mod.rs - metal::MetalCompute::default_device (line 272)
+src/metal/mod.rs - metal::MetalCompute::devices (line 160)
+src/metal/mod.rs - metal::MetalCompute::is_available (line 211)
+src/metal/mod.rs - metal::MetalCompute::new (line 235)
+src/metal/mod.rs - metal::is_available (line 446)
+src/metal/types.rs - metal::types::MetalDevice (line 22)
+src/metal/types.rs - metal::types::MetalDevice::is_apple_silicon (line 112)
+src/metal/types.rs - metal::types::MetalDevice::vram_gb (line 132)
 src/neural_engine/mod.rs - neural_engine (line 20)
 src/neural_engine/mod.rs - neural_engine::NeuralEngineSession::load (line 272)
-src/unified_memory/mod.rs - unified_memory (line 26)
-src/unified_memory/mod.rs - unified_memory::UmaBuffer::new (line 143)
+src/unified_memory/buffer.rs - unified_memory::buffer::UmaBuffer (line 39)
+src/unified_memory/buffer.rs - unified_memory::buffer::UmaBuffer (line 65)
+src/unified_memory/buffer.rs - unified_memory::buffer::UmaBuffer::allocated_size (line 263)
+src/unified_memory/buffer.rs - unified_memory::buffer::UmaBuffer::as_mut_ptr (line 306)
+src/unified_memory/buffer.rs - unified_memory::buffer::UmaBuffer::as_mut_slice (line 344)
+src/unified_memory/buffer.rs - unified_memory::buffer::UmaBuffer::as_ptr (line 286)
+src/unified_memory/buffer.rs - unified_memory::buffer::UmaBuffer::as_slice (line 324)
+src/unified_memory/buffer.rs - unified_memory::buffer::UmaBuffer::copy_from_slice (line 390)
+src/unified_memory/buffer.rs - unified_memory::buffer::UmaBuffer::is_aligned (line 367)
+src/unified_memory/buffer.rs - unified_memory::buffer::UmaBuffer::is_empty (line 245)
+src/unified_memory/buffer.rs - unified_memory::buffer::UmaBuffer::is_uma_available (line 432)
+src/unified_memory/buffer.rs - unified_memory::buffer::UmaBuffer::len (line 226)
+src/unified_memory/buffer.rs - unified_memory::buffer::UmaBuffer::new (line 120)
+src/unified_memory/buffer.rs - unified_memory::buffer::UmaBuffer::new (line 132)
+src/unified_memory/buffer.rs - unified_memory::buffer::UmaBuffer::zeroed (line 204)
+src/unified_memory/mod.rs - unified_memory (line 47)
+src/unified_memory/mod.rs - unified_memory::is_available (line 138)
 test_afterburner_convenience_function
 test_afterburner_is_available_consistent
 test_afterburner_monitor_graceful_on_missing_hardware
