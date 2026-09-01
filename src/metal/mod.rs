@@ -19,8 +19,11 @@
 //!
 //! - F046: All Metal devices enumerated
 //! - F047: Device properties accurate
-//! - F053: Multi-GPU dispatch works
-//! - F058: Headless GPU works
+//!
+//! Not claimed, and previously listed here in error: "F053: Multi-GPU dispatch
+//! works" and "F058: Headless GPU works". `dispatch()` returns
+//! [`Error::Unimplemented`] unconditionally, so neither claim is falsifiable
+//! by any test and neither was ever satisfied.
 
 use crate::error::{Error, Result, Subsystem};
 
@@ -30,14 +33,25 @@ pub struct MetalDevice {
     /// Human-readable device name.
     pub name: String,
     /// Unique registry ID for the device.
+    /// **Synthesized, not queried.** This is the enumeration index + 1, not the
+    /// IOKit registry ID. manzana makes no IOKit call for Metal devices.
     pub registry_id: u64,
     /// True if this is a low-power (integrated) GPU.
+    /// Derived from whether the device name matches an integrated part, not
+    /// queried from the device.
     pub is_low_power: bool,
     /// True if this is a headless (no display) GPU.
+    /// **Always `false`.** `system_profiler SPDisplaysDataType` does not report
+    /// this, and manzana does not determine it.
     pub is_headless: bool,
     /// Maximum threads per threadgroup.
+    /// **A hardcoded 1024**, not a device query. 1024 is the documented Metal
+    /// limit for current Apple GPUs, but this value was never read from the
+    /// device -- so it is a published specification figure, not a measurement.
     pub max_threads_per_threadgroup: u32,
     /// Maximum buffer length in bytes.
+    /// Derived from the VRAM figure `system_profiler` reports, when it reports
+    /// one. Not a queried `maxBufferLength`.
     pub max_buffer_length: u64,
     /// Unified memory architecture (Apple Silicon).
     pub has_unified_memory: bool,

@@ -13,7 +13,7 @@
 //! - **Poka-Yoke**: Type-safe wrappers prevent misuse at compile time
 //! - **Jidoka**: All unsafe blocks have SAFETY comments
 //! - **Genchi Genbutsu**: Direct hardware queries, no simulation. This holds
-//!   for `iokit.rs`; `security.rs` currently binds nothing at all.
+//!   for `iokit.rs`, the only file here.
 //!
 //! ## Safety Rules (from specification S1-S6)
 //!
@@ -29,11 +29,13 @@
 //! ```text
 //! ffi/
 //! ├── mod.rs          # This file - module router
-//! ├── iokit.rs        # IOKit bindings (Afterburner, GPU discovery)
-//! ├── coreml.rs       # CoreML bindings (Neural Engine)
-//! ├── metal_sys.rs    # Metal bindings (GPU compute)
-//! └── security.rs     # Security.framework bindings (Secure Enclave)
+//! └── iokit.rs        # IOKit bindings (Afterburner discovery and stats)
 //! ```
+//!
+//! That is the whole directory. Earlier revisions of this doc also listed
+//! `coreml.rs`, `metal_sys.rs` and `security.rs`; none of the three has ever
+//! existed here, and `security.rs` was deleted outright in 0.3.0 along with
+//! all cryptography. A module tree in a doc comment is a claim like any other.
 
 // Allow unsafe in this module only - quarantine zone
 #![allow(unsafe_code)]

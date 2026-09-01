@@ -47,7 +47,10 @@
 //! - `afterburner` - Enable Afterburner FPGA support (Mac Pro 2019+)
 //! - `neural-engine` - Enable Neural Engine support (Apple Silicon)
 //! - `metal` - Enable Metal GPU compute
-//! - `secure-enclave` - Enable Secure Enclave operations
+//!
+//! These flags are currently declared but gate nothing: no `#[cfg(feature)]`
+//! exists in `src/`. The `secure-enclave` flag was removed in 0.3.0 with the
+//! module it named.
 //! - `full` - Enable all features
 //!
 //! # Safety Guarantees

@@ -27,6 +27,10 @@ die() { printf 'harness failure: %s\n' "$*" >&2; exit 2; }
 command -v rsync >/dev/null 2>&1 || die "rsync not found"
 
 mkdir -p "$RECEIPTS" || die "cannot create $RECEIPTS"
+# Clear receipts from previous runs. A host that fails early `continue`s before
+# writing one, and the summary globs *.json -- so a stale receipt from an
+# earlier green run would be reported as this run's result.
+rm -f "$RECEIPTS"/*.json "$RECEIPTS"/*.census "$RECEIPTS"/*.census.err 2>/dev/null || true
 
 overall=0
 ran=0
@@ -102,7 +106,11 @@ for host in $HOSTS; do
   # which made `comm` report ~21 spurious "macOS-only" tests, including things
   # like test_version_not_empty that plainly exist on both. comm requires its
   # inputs sorted under the SAME collation or its output is meaningless.
-  total_tests=$(grep -c . "$census" 2>/dev/null || echo 0)
+  # `grep -c` prints a count AND exits 1 on zero matches, so `|| echo 0`
+  # appended a SECOND line: total_tests became the string "0\n0", the
+  # integer test below errored, and the empty-denominator guard never fired.
+  total_tests=$( { grep -c . "$census" 2>/dev/null || true; } | head -1 )
+  total_tests=${total_tests:-0}
   ignored=$(grep -oE '[0-9]+ ignored' "$log" | head -1 | grep -oE '[0-9]+' || echo 0)
   printf '  census : %s test(s) exist here, %s ignored\n' "$total_tests" "$ignored"
 
@@ -113,7 +121,8 @@ for host in $HOSTS; do
     overall=1
   fi
   for m in neural_engine metal unified_memory afterburner error; do
-    n=$(grep -c "^${m}::" "$census" 2>/dev/null || true)
+    n=$( { grep -c "^${m}::" "$census" 2>/dev/null || true; } | head -1 )
+    n=${n:-0}
     if [ "${n:-0}" -eq 0 ]; then
       printf '  \033[0;31mEMPTY DENOMINATOR\033[0m %s has 0 tests on %s\n' "$m" "$host" >&2
       overall=1
@@ -157,9 +166,9 @@ printf '\n\033[0;32mE2E MATRIX PASSED\033[0m on %d host(s)\n' "$ran"
 # Cross-host census delta. A large gap means much of the surface is exercised
 # on only one platform -- exactly the shape the incident had.
 if [ -s "$RECEIPTS/intel.census" ] && [ -s "$RECEIPTS/mini.census" ]; then
-  only_mac=$(LC_ALL=C comm -13 "$RECEIPTS/intel.census" "$RECEIPTS/mini.census" | grep -c . || true)
-  only_lin=$(LC_ALL=C comm -23 "$RECEIPTS/intel.census" "$RECEIPTS/mini.census" | grep -c . || true)
-  both=$(LC_ALL=C comm -12 "$RECEIPTS/intel.census" "$RECEIPTS/mini.census" | grep -c . || true)
+  only_mac=$( { LC_ALL=C comm -13 "$RECEIPTS/intel.census" "$RECEIPTS/mini.census" | grep -c . || true; } | head -1 )
+  only_lin=$( { LC_ALL=C comm -23 "$RECEIPTS/intel.census" "$RECEIPTS/mini.census" | grep -c . || true; } | head -1 )
+  both=$(     { LC_ALL=C comm -12 "$RECEIPTS/intel.census" "$RECEIPTS/mini.census" | grep -c . || true; } | head -1 )
   printf '\ncensus delta: %s on both, %s macOS-only, %s Linux-only\n' "$both" "$only_mac" "$only_lin"
   if [ "${only_mac:-0}" -gt 0 ]; then
     printf 'macOS-only tests (absent from the Linux lane):\n'

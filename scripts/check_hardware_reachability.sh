@@ -14,8 +14,14 @@
 #   unrepresentable rather than merely tested-for.
 #
 # NOTES
-#   - Resolution uses `pmat query`, never grep (guide 5.2). pmat emits a
-#     `calls:` edge list per function, which is what limb (a) is decided on.
+#   - Resolution is done by the awk extractor below, NOT by pmat. An earlier
+#     header claimed "resolution uses pmat query ... pmat emits a `calls:` edge
+#     list, which is what limb (a) is decided on", and the script hard-required
+#     pmat while never invoking it: a decorative dependency and a false claim
+#     about the mechanism, inside the gate that exists to catch false claims.
+#     pmat query was evaluated and rejected here: this gate must be a pure
+#     function of the source text so its verdicts are reproducible without an
+#     index, and `pmat query` needs .pmat/context.db to exist.
 #   - Deterministic. Runs on Linux. No LLM turn. No network.
 #   - Exit 0 = clean, 1 = violation, 2 = harness failure. A harness failure is
 #     NOT a pass: it exits non-zero precisely so an unrunnable gate cannot be
@@ -28,7 +34,6 @@ JSON_OUT="${JSON_OUT:-}"
 
 die() { printf 'harness failure: %s\n' "$*" >&2; exit 2; }
 
-command -v pmat >/dev/null 2>&1 || die "pmat not found; the gate cannot resolve call edges"
 [ -f "$CHARTER" ] || die "charter not found at $CHARTER"
 
 # ---------------------------------------------------------------------------
@@ -158,7 +163,14 @@ for f in "${HW_PATHS[@]}"; do
       capturing=1; start=NR; body=""; callbody=""; depth=0; sig=""; insig=1
     }
     capturing {
-      line=$0; gsub(/\t/, " ", line); body = body " " line
+      line=$0; gsub(/\t/, " ", line)
+      # Strip // line comments BEFORE matching or brace counting. Without this
+      # a comment mentioning Error::unimplemented certified a function as
+      # refusing, and a comment naming a boundary-reaching function certified
+      # it as reaching -- both limbs satisfiable by prose. Braces inside
+      # comments also corrupted the extent counting.
+      sub(/\/\/.*$/, "", line)
+      body = body " " line
       if (insig) { sig = sig " " line; if (index(line,"{")>0) insig=0 }
       else { callbody = callbody " " line }
       n=gsub(/\{/,"{"); m=gsub(/\}/,"}"); depth += n - m
@@ -227,7 +239,8 @@ while IFS=$'\t' read -r key name file start ispub rr body callbody; do
   # Capability-shaped predicate returning a bare `true` -- capability-without-probe.
   cap_lie=0
   case "$name" in
-    is_*available*|is_*present*|has_*|supports_*|*_available)
+    is_*available*|is_*present*|is_*supported*|is_*enabled*|is_*active*|\
+    has_*|supports_*|can_*|*_available|*_present|*_supported)
       stripped=$(printf '%s' "$body" | sed 's/[[:space:]]\+/ /g')
       case "$stripped" in
         *"{ true }"*|*"{ true"*|*"> bool { true"*|*"true }"*) cap_lie=1 ;;

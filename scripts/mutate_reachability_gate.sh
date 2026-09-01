@@ -23,12 +23,19 @@ die() { printf 'harness failure: %s\n' "$*" >&2; exit 2; }
 [ -d "$FIX" ]  || die "fixtures not found at $FIX"
 
 WORK="$(mktemp -d)" || die "cannot create work directory"
+PROBE_FILE="src/zz_mutation_probe.rs"
 cleanup() {
+  # The oracle plants PROBE_FILE in the TRACKED source tree. Cleaning only
+  # $WORK meant an interrupt left it behind, after which the charter-mapping
+  # check and the census both report a module nothing maps -- a self-inflicted
+  # RED that looks like a real finding.
+  [ -e "$PROBE_FILE" ] && rm -f -- "$PROBE_FILE"
   [ -n "${WORK:-}" ] || return 0
   [ -d "$WORK" ] || return 0
   [ -e "$WORK/mutant.sh" ] && rm -f -- "$WORK/mutant.sh"
   rmdir -- "$WORK" 2>/dev/null || true
 }
+trap cleanup INT TERM
 trap cleanup EXIT
 
 # The fixture suite, as an oracle. Returns 0 when EVERY expectation holds.

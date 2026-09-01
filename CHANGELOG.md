@@ -85,7 +85,15 @@ The same pattern existed outside the module named in the advisory:
   parser, a `PublicKey` type that accepted points not on the P-256 curve, and a
   test-only constructor that existed solely to make unreachable methods
   reachable. The advisory's scope is now closed by absence.
-  `[V]` `grep -r secure_enclave src/` returns nothing
+  `[V]` `! grep -rq "secure_enclave::\|mod secure_enclave" src/ && ! test -e src/secure_enclave && ! test -e src/ffi/security.rs`
+
+  (The earlier receipt read `grep -r secure_enclave src/ returns nothing` and
+  was FALSE when executed: one doc comment in `neural_engine` cites the deleted
+  module to explain why a test constructor exists. A falsifiable receipt that
+  fails when run is worse than no receipt, and this one sat in the changelog
+  entry about false claims. The command above is the claim actually meant --
+  no code references the module, and neither it nor `ffi/security.rs` exists --
+  and it passes.)
 - Security-critical tests are no longer `#[cfg(target_os = "macos")]`-gated.
   That gating left the default Linux CI lane with an *empty* test set for the
   cryptographic surface — and zero tests passing is indistinguishable from all

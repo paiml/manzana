@@ -6,7 +6,7 @@
 //! # Scope
 //!
 //! [`UmaBuffer`] is a real, page-aligned heap allocation made with
-//! [`std::alloc::alloc`], with RAII deallocation. That much works and is
+//! [`std::alloc::alloc_zeroed`], with RAII deallocation. That much works and is
 //! tested.
 //!
 //! It is **not** a Metal buffer and it is **not** shared with a GPU. This
@@ -52,10 +52,28 @@ pub const PAGE_SIZE: usize = 4096;
 ///
 /// The literal `17_179_869_184` does not fit a 32-bit `usize` and made the
 /// crate fail to compile on 32-bit targets outright.
-pub const MAX_ALLOCATION: usize = if usize::BITS >= 64 {
-    17_179_869_184
-} else {
-    usize::MAX
+// The cast below is guarded by `WANT <= usize::MAX as u64`, so it cannot
+// truncate; clippy's lint is shape-based and cannot see the guard. Plain
+// `allow` rather than `expect`/`reason`, which need Rust 1.81 while this
+// crate's MSRV is 1.75.
+#[allow(clippy::cast_possible_truncation)]
+pub const MAX_ALLOCATION: usize = {
+    // Expressed as a u64 literal, which fits on every target, then narrowed.
+    // Writing `if usize::BITS >= 64 { 17_179_869_184 }` does NOT work: the
+    // deny-by-default `overflowing_literals` lint fires on the LITERAL in a
+    // 32-bit usize context, before the branch is chosen, so the crate still
+    // failed to compile there while the comment claimed otherwise.
+    //
+    // Not verified by building: no 32-bit target is installed here, and
+    // `cargo check --target i686-unknown-linux-gnu` fails with "can't find
+    // crate for std". This form has no oversized literal on any target, but
+    // that is reasoning, not a passing build.
+    const WANT: u64 = 17_179_869_184; // 16 GB
+    if WANT <= usize::MAX as u64 {
+        WANT as usize
+    } else {
+        usize::MAX
+    }
 };
 
 /// A page-aligned host buffer.

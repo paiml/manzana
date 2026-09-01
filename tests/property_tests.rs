@@ -248,7 +248,11 @@ proptest! {
     // Property: UMA buffer allocation preserves length
     #[test]
     fn prop_uma_buffer_length_preserved(len in 1usize..100_000) {
-        if let Ok(buffer) = UmaBuffer::new(len) {
+        // NOT `if let Ok(..)`: that made an implementation of UmaBuffer::new
+        // returning Err pass all three properties across every generated case.
+        // Allocation of a valid length must SUCCEED, so assert it.
+        let buffer = UmaBuffer::new(len).expect("valid length must allocate");
+        {
             prop_assert_eq!(buffer.len(), len);
             prop_assert!(!buffer.is_empty());
         }
@@ -257,7 +261,11 @@ proptest! {
     // Property: UMA buffer is always page-aligned
     #[test]
     fn prop_uma_buffer_alignment(len in 1usize..100_000) {
-        if let Ok(buffer) = UmaBuffer::new(len) {
+        // NOT `if let Ok(..)`: that made an implementation of UmaBuffer::new
+        // returning Err pass all three properties across every generated case.
+        // Allocation of a valid length must SUCCEED, so assert it.
+        let buffer = UmaBuffer::new(len).expect("valid length must allocate");
+        {
             prop_assert!(buffer.is_aligned());
             prop_assert!(buffer.allocated_size() >= 4096);
         }
@@ -266,7 +274,11 @@ proptest! {
     // Property: UMA allocated size >= requested size
     #[test]
     fn prop_uma_allocated_ge_requested(len in 1usize..100_000) {
-        if let Ok(buffer) = UmaBuffer::new(len) {
+        // NOT `if let Ok(..)`: that made an implementation of UmaBuffer::new
+        // returning Err pass all three properties across every generated case.
+        // Allocation of a valid length must SUCCEED, so assert it.
+        let buffer = UmaBuffer::new(len).expect("valid length must allocate");
+        {
             prop_assert!(buffer.allocated_size() >= len);
         }
     }

@@ -58,8 +58,21 @@ total=$(wc -l < "$WORK/names.txt" | tr -d ' ')
 [ "$total" -gt 0 ] || die "census counted 0 tests -- refusing to report that as a pass"
 
 # 1. Nothing ignored.
-ignored=$(grep -c ': test$' "$WORK/out.txt" >/dev/null 2>&1; cargo test --all-features 2>/dev/null | grep -oP '\d+(?= ignored)' | paste -sd+ | bc)
+# Guarded end to end. Under `set -euo pipefail` an unparseable "N ignored"
+# figure previously killed the script with exit 1 and NO output, silently
+# removing assertion 1 -- the gate's headline check -- rather than failing it.
+ignored=$( { cargo test --all-features 2>/dev/null \
+             | grep -oE '[0-9]+ ignored' \
+             | grep -oE '^[0-9]+' \
+             | paste -sd+ - || true; } | head -1 )
+if [ -n "${ignored:-}" ]; then
+  ignored=$( { echo "$ignored" | bc 2>/dev/null || true; } | head -1 )
+fi
 ignored="${ignored:-0}"
+case "$ignored" in
+  ''|*[!0-9]*) die "could not parse the ignored-test count; refusing to assume 0" ;;
+  *) : ;;
+esac
 
 # 2. Per-module denominators.
 missing=""

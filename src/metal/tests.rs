@@ -122,7 +122,22 @@ fn test_dispatch_is_unimplemented() {
 #[test]
 fn test_no_fabricated_device_when_detection_fails() {
     // fallback_device() must return no devices rather than inventing an
-    // "Apple GPU". On non-macOS there is no Metal, so the list is empty.
+    // "Apple GPU". The whole body of this test used to sit under
+    // cfg(not(target_os = "macos")), so on macOS -- the ONLY host where
+    // fallback_device() is reachable at all -- it was empty and passed
+    // vacuously. Asserted directly instead, on every platform.
+    // fallback_device() is itself cfg(target_os = "macos"), so it can only be
+    // asserted there -- which is also the only platform where it is reachable,
+    // and where restoring its 0.2.0 fabricating body would otherwise go
+    // undetected by the whole suite.
+    #[cfg(target_os = "macos")]
+    {
+        assert!(
+            MetalCompute::fallback_device().is_empty(),
+            "fallback_device() must fabricate nothing; it invented an \"Apple GPU\" in 0.2.0"
+        );
+    }
+
     #[cfg(not(target_os = "macos"))]
     {
         assert!(

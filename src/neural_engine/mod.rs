@@ -218,7 +218,12 @@ impl NeuralEngineSession {
     #[must_use]
     #[allow(clippy::missing_const_for_fn)]
     pub fn is_available() -> bool {
-        // Check for Apple Silicon via sysctl
+        // A compile-time target check, NOT a probe. No sysctl call exists;
+        // an earlier comment here claimed one, which is the same
+        // description-versus-behaviour gap the 0.3.0 release exists to close.
+        // Sound as a presence claim because every Apple Silicon part ships an
+        // ANE -- recorded and justified in manzana-charter.toml under
+        // [capability_predicates].
         #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
         {
             true

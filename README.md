@@ -84,7 +84,8 @@ function returns `Error::Unimplemented` — it does not return a guess.
 
 | Capability | Module | Status |
 |---|---|---|
-| Metal GPU enumeration (name, VRAM, limits) | `metal` | **Implemented** — via `system_profiler` |
+| Metal GPU enumeration (name, VRAM) | `metal` | **Implemented** — via `system_profiler` |
+| Metal device *limits* (`max_threads_per_threadgroup`, `registry_id`, `is_headless`) | `metal` | **Not queried** — hardcoded or synthesized; see the field docs |
 | Afterburner presence + stats | `afterburner` | **Implemented** — via IOKit |
 | Apple Silicon / ANE presence | `neural_engine` | **Implemented** — compile-time target check |
 | Page-aligned host buffer allocation | `unified_memory` | **Implemented** — real allocation, RAII |

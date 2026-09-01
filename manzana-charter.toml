@@ -74,7 +74,13 @@ compile_time_sound = [
 # exists to catch. Each row here is a claim someone must defend.
 [owned_state_ops]
 functions = [
+    # Writes into an allocation UmaBuffer::new obtained via alloc_zeroed.
     "src/unified_memory.rs:copy_from_slice",
+    # A pure value constructor: validates `data.len() == prod(shape)` and
+    # builds a Tensor from its arguments alone. It claims no hardware, and it
+    # is contract-bound under manzana-tensor-v1 with three falsification tests
+    # that were each verified to go RED against the pre-fix implementation.
+    "src/neural_engine/mod.rs:new",
 ]
 
 # The refusal that satisfies limb (b).

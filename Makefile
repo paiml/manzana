@@ -94,7 +94,9 @@ quorum:
 	@# measurement. The registry lives outside this repo, so it is optional
 	@# here but reported when present.
 	@if [ -f ../provable-contracts/contracts/manzana/binding.yaml ]; then \
-		pv score contracts/ --binding ../provable-contracts/contracts/manzana/binding.yaml | tail -6; \
+		pv score contracts/ --binding ../provable-contracts/contracts/manzana/binding.yaml > .pv-score.txt \
+			|| { echo "pv score failed"; rm -f .pv-score.txt; exit 1; }; \
+		tail -6 .pv-score.txt; rm -f .pv-score.txt; \
 	else \
 		echo "   NOTE: binding registry absent; Bind score not measured"; \
 	fi
