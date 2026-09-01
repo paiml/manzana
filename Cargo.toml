@@ -1,5 +1,5 @@
 [package]
-exclude = ["tests/", "benches/", "docs/", ".github/", "book/", ".pmat/", "QA_REPORT_2026-01-06.md"]
+exclude = ["tests/", "benches/", "docs/", ".github/", "book/", ".pmat/", "QA_REPORT_2026-01-06.md", ".pv", "contracts/.pv"]
 name = "manzana"
 version = "0.3.0"
 edition = "2021"
