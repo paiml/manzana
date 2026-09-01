@@ -254,20 +254,22 @@ impl UmaBuffer {
         Ok(())
     }
 
-    /// Check if UMA is available on this system.
+    /// Whether manzana can provide unified (GPU-visible) memory.
     ///
-    /// Returns `true` on Apple Silicon, `false` on Intel Macs.
+    /// **Always returns `false`.** Apple Silicon does have a unified memory
+    /// architecture, but that is a fact about the chip, not about this crate:
+    /// [`UmaBuffer`] is a host allocation that no GPU can read. Reporting
+    /// `true` would tell a caller it has zero-copy CPU/GPU sharing available
+    /// when nothing here can deliver it.
+    ///
+    /// The previous implementation returned `true` whenever the *build target*
+    /// was `aarch64` macOS. A compile-time target check cannot observe the
+    /// machine the code runs on, and it was reporting a capability rather than
+    /// the chip property it actually inferred. Flagged by
+    /// `scripts/check_hardware_reachability.sh` as `capability-without-probe`.
     #[must_use]
-    #[allow(clippy::missing_const_for_fn)]
-    pub fn is_uma_available() -> bool {
-        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-        {
-            true
-        }
-        #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
-        {
-            false
-        }
+    pub const fn is_uma_available() -> bool {
+        false
     }
 }
 
@@ -413,13 +415,15 @@ mod tests {
     }
 
     #[test]
-    fn test_is_uma_available() {
-        let available = UmaBuffer::is_uma_available();
-        // On Apple Silicon: true, elsewhere: false
-        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-        assert!(available);
-        #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
-        assert!(!available);
+    fn test_is_uma_available_reports_capability_not_chip_property() {
+        // Ungated: the answer is the same on every target. The previous
+        // version asserted `true` on aarch64 macOS, inferring a capability
+        // from the build target, which cannot observe the running machine.
+        assert!(
+            !UmaBuffer::is_uma_available(),
+            "manzana provides no GPU-visible memory, so this must be false \
+             even on Apple Silicon, whose chip does have unified memory"
+        );
     }
 
     #[test]

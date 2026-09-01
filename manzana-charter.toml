@@ -1,0 +1,84 @@
+# manzana charter — what this crate is for, machine-readable.
+#
+# Non-goals say what manzana does not claim. They cannot decide the fate of a
+# module. This can. See docs/specifications/security-architecture-plan.md §5.0.
+#
+# CHARTER
+#   manzana exposes Apple hardware capabilities to Rust where no maintained
+#   Rust crate already does. Where one exists, manzana documents it and ships
+#   nothing.
+#
+# This file is the DENOMINATOR for the hardware-reachability gate (MZNQ-4).
+# A module absent from [hardware_modules] is invisible to that gate, which is
+# exactly the missing-denominator defect (F8) the gate exists to prevent. The
+# charter-mapping check asserts every public module appears in exactly one of
+# the tables below.
+
+[charter]
+version = 1
+statement = "Expose Apple hardware to Rust where no maintained Rust crate does; where one exists, document it and ship nothing."
+spec = "docs/specifications/security-architecture-plan.md"
+
+# Modules that claim to touch Apple hardware. Every `pub fn` in these files is
+# subject to the reachability rule: reach an allowlisted external boundary, or
+# return Err(Error::Unimplemented). There is no third option, which is what
+# makes a fabricated return value unrepresentable rather than merely tested-for.
+[hardware_modules]
+paths = [
+    "src/secure_enclave/mod.rs",
+    "src/neural_engine.rs",
+    "src/metal/mod.rs",
+    "src/unified_memory.rs",
+    "src/afterburner.rs",
+    "src/ffi/iokit.rs",
+    "src/ffi/security.rs",
+]
+
+# Boundaries that count as "reaching real hardware". A call resolving into one
+# of these satisfies limb (a) of the rule.
+[hardware_modules.allowlist]
+crates = ["security_framework", "objc2", "core_foundation", "core_foundation_sys", "mach2"]
+# Raw FFI markers, matched as source constructs rather than call targets.
+constructs = ['extern "C"', "#[link", "IOServiceMatching", "IOServiceGetMatchingService", "IORegistryEntry"]
+# Real host syscalls / process boundaries that genuinely leave the crate.
+host_calls = ["std::process::Command", "Command::new", "std::alloc::alloc_zeroed", "alloc_zeroed", "dealloc"]
+
+# The refusal that satisfies limb (b).
+[hardware_modules.refusal]
+symbols = ["Error::unimplemented", "unimplemented"]
+error_variant = "Unimplemented"
+
+# Non-hardware modules. Not subject to the reachability rule, but still subject
+# to the charter-mapping check, so nothing is silently unclassified.
+[support_modules]
+paths = [
+    "src/lib.rs",
+    "src/error.rs",
+    "src/ffi/mod.rs",
+    "src/secure_enclave/types.rs",
+]
+
+# Surfaces judged OUT of charter — a maintained Rust crate already covers them.
+# Presence here is a deletion commitment with a target version, not a wishlist.
+[[out_of_charter]]
+module = "src/secure_enclave/mod.rs"
+covered_by = "security-framework"
+downloads = 349_000_000
+verdict = "delete"
+target_version = "0.4.0"
+rationale = """
+Wrapping security-framework adds zero capability and imports 100% of the
+RUSTSEC-2026-0273 advisory surface. Deletion drives the cryptographic attack
+surface to zero and makes "never build cryptography" un-violable by
+construction rather than by policy. 0.3.0 ships refusal; a live disclosure must
+not be churned mid-flight.
+"""
+
+# Known naming defect: the type claims a capability it does not have. Tracked
+# here so it is not lost — stale self-description in a type name is still F10.
+[[known_misnomers]]
+symbol = "UmaBuffer"
+file = "src/unified_memory.rs"
+claims = "unified CPU/GPU memory"
+actually = "page-aligned host allocation; not an MTLBuffer, not GPU-visible"
+target_version = "0.4.0"
