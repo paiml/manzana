@@ -1,0 +1,75 @@
+metadata:
+  version: "1.0.0"
+  author: "Sovereign AI Stack"
+  description: "Shape/data consistency contract for manzana::neural_engine::Tensor"
+  crate: "manzana"
+  references:
+    - "docs/specifications/security-architecture-plan.md"
+
+equations:
+  new:
+    formula: "len(data) = prod(shape)"
+    domain: "shape ∈ Vec<usize>, data ∈ Vec<f32>"
+    invariants:
+      - "A Tensor exists only when its data length equals the product of its shape"
+      - "An empty shape has product 1, so it admits exactly one element"
+      - "Construction is total: every input either yields a valid Tensor or an error"
+
+  zeros:
+    formula: "zeros(shape) = Tensor{shape, data = [0.0; prod(shape)]}"
+    domain: "shape ∈ Vec<usize>"
+    invariants:
+      - "zeros(shape) always satisfies the `new` invariant by construction"
+
+proof_obligations:
+  - type: invariant
+    property: "Tensor::new rejects any data length that is not the shape product"
+    formal: "∀shape,data: new(shape,data) = Ok(t) ⟹ len(t.data) = prod(t.shape)"
+    applies_to: new
+
+  - type: invariant
+    property: "Tensor::new never panics, including on shape products that overflow"
+    formal: "∀shape,data: new(shape,data) ∈ {Ok(_), Err(_)}"
+    applies_to: new
+
+  - type: invariant
+    property: "numel agrees with the stored data length for every constructed Tensor"
+    formal: "∀t constructed via new: t.numel() = len(t.data)"
+    applies_to: new
+
+falsification_tests:
+  - id: FALSIFY-TENSOR-001
+    rule: "Mismatched data length is rejected"
+    test: "test_tensor_new_invalid_size"
+    prediction: "new(vec![2,3], vec![0.0; 5]) returns Err(InvalidInput); 5 != 2*3"
+    if_fails: "Tensor::new accepted data whose length is not prod(shape), so a Tensor can exist whose shape lies about its contents"
+
+  - id: FALSIFY-TENSOR-002
+    rule: "Valid shape/data pair is accepted and preserves numel"
+    test: "test_tensor_new_valid"
+    prediction: "new(vec![2,3], vec![0.0; 6]) returns Ok(t) with t.numel() == 6 and t.ndim() == 2"
+    if_fails: "Either construction rejects a well-formed tensor, or numel disagrees with the stored data length"
+
+  - id: FALSIFY-TENSOR-003
+    rule: "Construction is total over arbitrary shape/data pairs -- never panics"
+    test: "prop_tensor_construction_is_total"
+    prediction: "for arbitrary shape and data, new() returns Ok or Err and never panics, including when prod(shape) overflows usize"
+    if_fails: "A shape product overflowed or indexed out of bounds; this crate denies panic, so a panicking constructor is a denial-of-service reachable from safe code"
+
+kani_harnesses:
+  - id: KANI-TENSOR-001
+    obligation: PO-TENSOR-001
+    property: "new() upholds len(data) = prod(shape) on every Ok result"
+    bound: 8
+    strategy: bounded_int
+    harness: verify_tensor_new_shape_invariant
+
+qa_gate:
+  id: QA-TENSOR
+  name: "tensor shape contract"
+  min_coverage: 0.90
+  max_complexity: 20
+  required_tests:
+    - "test_tensor_new_invalid_size"
+    - "test_tensor_new_valid"
+    - "prop_tensor_construction_is_total"

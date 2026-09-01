@@ -121,7 +121,19 @@ impl Tensor {
     /// Returns an error if data length doesn't match shape.
     #[provable_contracts_macros::contract("manzana-tensor-v1", equation = "new")]
     pub fn new(shape: Vec<usize>, data: Vec<f32>) -> Result<Self> {
-        let expected_len: usize = shape.iter().product();
+        // Checked, not `product()`. `shape.iter().product::<usize>()` overflows
+        // for e.g. [usize::MAX, 2]: it PANICS in debug (this crate sets
+        // panic = "deny", and the constructor is safe and public) and silently
+        // WRAPS in release, so the length check below would compare against a
+        // wrapped value and could admit a Tensor whose shape misdescribes its
+        // own contents. Found by the manzana-tensor-v1 contract obligation
+        // "new() never panics, including on shape products that overflow".
+        let expected_len = shape
+            .iter()
+            .try_fold(1usize, |acc, &d| acc.checked_mul(d))
+            .ok_or_else(|| {
+                Error::invalid_input(format!("shape {shape:?} overflows usize when multiplied"))
+            })?;
         if data.len() != expected_len {
             return Err(Error::invalid_input(format!(
                 "data length {} doesn't match shape {shape:?} (expected {expected_len})",
@@ -134,7 +146,14 @@ impl Tensor {
     /// Create a tensor filled with zeros.
     #[must_use]
     pub fn zeros(shape: Vec<usize>) -> Self {
-        let len: usize = shape.iter().product();
+        // Saturating rather than checked: `zeros` returns Self, not Result, so
+        // it has no channel to report overflow. Saturating turns a panic into
+        // an allocation failure, which is at least a real failure rather than a
+        // wrapped length. `new` is the checked constructor.
+        let len: usize = shape
+            .iter()
+            .try_fold(1usize, |acc, &d| acc.checked_mul(d))
+            .unwrap_or(usize::MAX);
         Self {
             shape,
             data: vec![0.0; len],
@@ -144,7 +163,13 @@ impl Tensor {
     /// Get the total number of elements.
     #[must_use]
     pub fn numel(&self) -> usize {
-        self.shape.iter().product()
+        // Cannot overflow for a Tensor built by `new`, which rejects shapes
+        // whose product does. Checked anyway: `zeros` saturates, and a future
+        // constructor must not turn this accessor into a panic.
+        self.shape
+            .iter()
+            .try_fold(1usize, |acc, &d| acc.checked_mul(d))
+            .unwrap_or(usize::MAX)
     }
 
     /// Get the number of dimensions.
@@ -417,5 +442,26 @@ mod tests {
         set.insert(AneOp::Convolution);
         set.insert(AneOp::MatMul);
         assert_eq!(set.len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod contract_binding {
+    //! Proves the `#[contract]` annotation on `Tensor::new` is BOUND.
+    //!
+    //! The macro expands to `option_env!("CONTRACT_MANZANA_TENSOR_V1_NEW")`.
+    //! With no build script that is `None` and the annotation proves nothing --
+    //! which is exactly what manzana shipped. build.rs now sets the variable
+    //! only after checking the contract file and equation both exist, so a
+    //! `Some` here is evidence the binding resolved.
+
+    #[test]
+    fn test_contract_binding_is_live() {
+        assert_eq!(
+            option_env!("CONTRACT_MANZANA_TENSOR_V1_NEW"),
+            Some("bound"),
+            "the manzana-tensor-v1/new contract binding did not resolve; the \
+             #[contract] attribute on Tensor::new would be decorative"
+        );
     }
 }

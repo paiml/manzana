@@ -58,6 +58,24 @@ coverage-check:
 	cargo llvm-cov --lib --fail-under 90
 
 quorum:
+	@echo "📜 Provable contracts (pv)..."
+	@# Per-file `pv validate`, never `pv lint <FILE>`: lint passes vacuously
+	@# over zero contracts, so a typo'd path would read as success.
+	@for c in contracts/*.yaml; do \
+		echo "   validate $$c"; pv validate "$$c" >/dev/null || exit 1; \
+		echo "   audit    $$c"; pv audit "$$c" >/dev/null || exit 1; \
+	done
+	@# Score against the binding registry. Without --binding, Bind scores 0.00
+	@# and the registry is never consulted -- a silent 0 that looks like a
+	@# measurement. The registry lives outside this repo, so it is optional
+	@# here but reported when present.
+	@if [ -f ../provable-contracts/contracts/manzana/binding.yaml ]; then \
+		pv score contracts/ --binding ../provable-contracts/contracts/manzana/binding.yaml | tail -6; \
+	else \
+		echo "   NOTE: binding registry absent; Bind score not measured"; \
+	fi
+	@echo "   binding liveness (contract attrs are bound, not decorative)"
+	cargo test --all-features contract_binding -- --exact contract_binding::test_contract_binding_is_live
 	@echo "🧾 SATD euphemism detection (MZNQ-005)..."
 	@# `--extended` detects the euphemisms plain SATD misses: stub, placeholder,
 	@# "for now". Default mode scored the fabricating 0.2.0 build at ZERO debt

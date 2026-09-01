@@ -8,6 +8,7 @@
 
 use manzana::afterburner::{AfterburnerStats, ProResCodec};
 use manzana::error::{Error, Subsystem};
+use manzana::neural_engine::Tensor;
 use manzana::unified_memory::UmaBuffer;
 use proptest::prelude::*;
 use std::collections::HashMap;
@@ -215,6 +216,34 @@ proptest! {
 
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(200))]
+
+    // FALSIFY-TENSOR-003 (contract manzana-tensor-v1).
+    //
+    // Construction must be TOTAL: Ok or Err, never a panic. This crate sets
+    // panic = "deny", and Tensor::new is safe and public, so a panicking
+    // constructor is a denial of service reachable from safe code.
+    //
+    // This found a real defect: `shape.iter().product::<usize>()` panicked in
+    // debug and wrapped in release for shapes like [usize::MAX, 2].
+    #[test]
+    fn prop_tensor_construction_is_total(
+        shape in proptest::collection::vec(0usize..=usize::MAX, 0..4),
+        n in 0usize..64,
+    ) {
+        let data = vec![0.0f32; n];
+        let _ = Tensor::new(shape, data); // must not panic
+        prop_assert!(true);
+    }
+
+    // The overflow case specifically, since random usize rarely hits it.
+    #[test]
+    fn prop_tensor_overflowing_shape_is_rejected_not_panicking(
+        big in (usize::MAX / 2)..=usize::MAX,
+        m in 2usize..8,
+    ) {
+        let r = Tensor::new(vec![big, m], vec![0.0; 4]);
+        prop_assert!(r.is_err(), "an overflowing shape product must be rejected");
+    }
 
     // Property: UMA buffer allocation preserves length
     #[test]
