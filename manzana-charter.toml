@@ -41,6 +41,42 @@ constructs = ['extern "C"', "#[link", "IOServiceMatching", "IOServiceGetMatching
 # Real host syscalls / process boundaries that genuinely leave the crate.
 host_calls = ["std::process::Command", "Command::new", "std::alloc::alloc_zeroed", "alloc_zeroed", "dealloc"]
 
+# Capability predicates whose COMPILE-TIME derivation is sound.
+#
+# The reachability gate flags a capability-shaped predicate returning a bare
+# `true` as `capability-without-probe`. That rule is right, and it caught the
+# 0.2.0 defect: secure_enclave::is_available() returned true on x86_64 macOS,
+# where there may be no Secure Enclave at all. The claim was FALSE.
+#
+# A compile-time claim can also be TRUE, and this is the auditable list of
+# those -- an explicit, justified, reviewable exception rather than a silent
+# pass. Adding a row here is a claim someone must defend.
+[capability_predicates]
+compile_time_sound = [
+    # Every Apple Silicon part ships a Neural Engine, so `target_arch =
+    # "aarch64" && target_os = "macos"` entails ANE presence for a natively
+    # built binary. Contrast the 0.2.0 defect, whose x86_64-macOS branch
+    # entailed nothing. Note this reports PRESENCE; inference is unimplemented,
+    # and lib.rs::is_acceleration_usable answers the usability question.
+    "src/neural_engine/mod.rs:is_available",
+]
+
+# Operations on memory the type ALREADY OWNS.
+#
+# These take `self` and only transform an allocation the type obtained
+# legitimately (UmaBuffer::new reaches alloc_zeroed). They return Result and
+# reach no boundary of their own, so the reachability rule would call them
+# fabricating -- but they claim nothing from hardware.
+#
+# An EXPLICIT LIST, deliberately, not a structural rule. A structural version
+# ("any self-method in a file where anything reaches a boundary") was tried and
+# cleared 0.2.0's sign(), verify() and delete() -- the exact defects the gate
+# exists to catch. Each row here is a claim someone must defend.
+[owned_state_ops]
+functions = [
+    "src/unified_memory.rs:copy_from_slice",
+]
+
 # The refusal that satisfies limb (b).
 [hardware_modules.refusal]
 symbols = ["Error::unimplemented", "unimplemented"]

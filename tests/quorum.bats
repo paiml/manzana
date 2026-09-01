@@ -38,6 +38,27 @@ GATE="scripts/check_hardware_reachability.sh"
   [ "$status" -eq 0 ]
 }
 
+@test "NAME COLLISION: a fabricator sharing a name with a real fn is RED" {
+  # The gate SHIPPED GREEN on this. Its reach table was keyed on the bare
+  # function NAME, so a fabricator inherited the verdict of any same-named
+  # function elsewhere in the module set. Every other fixture directory holds
+  # exactly ONE file, and that isolation is what hid it -- a fixture cannot
+  # exercise a collision it cannot have.
+  run env FIXTURE_DIR=tests/fixtures/quorum/red_name_collision bash "$GATE"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"b_capability_lie.rs"* ]]
+}
+
+@test "backtest: the corrected gate catches 0.2.0 sign, verify, delete AND is_available" {
+  # The name-keyed gate reported 11 violations on the published 0.2.0 but
+  # marked every is_available "reaches-boundary", missing the headline
+  # RUSTSEC-2026-0273 capability lie.
+  R=evidence/quorum/mznq-002-backtest/published-0.2.0.json
+  [ -f "$R" ]
+  run python3 tests/fixtures/quorum/assert_backtest.py "$R"
+  [ "$status" -eq 0 ]
+}
+
 @test "fixture 2: a capability asserted as a constant is RED" {
   run env FIXTURE_DIR=tests/fixtures/quorum/red_capability_lie bash "$GATE"
   [ "$status" -eq 1 ]

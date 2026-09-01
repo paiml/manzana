@@ -53,6 +53,8 @@ mapfile -t HW_PATHS      < <(read_array "hardware_modules" "paths")
 mapfile -t ALLOW_CRATES  < <(read_array "hardware_modules.allowlist" "crates")
 mapfile -t ALLOW_HOST    < <(read_array "hardware_modules.allowlist" "host_calls")
 mapfile -t REFUSAL_SYMS  < <(read_array "hardware_modules.refusal" "symbols")
+mapfile -t SOUND_PREDS   < <(read_array "capability_predicates" "compile_time_sound")
+mapfile -t OWNED_STATE_OPS < <(read_array "owned_state_ops" "functions")
 
 # constructs use single-quoted TOML entries, so read them separately
 mapfile -t ALLOW_CONSTRUCTS < <(
@@ -153,16 +155,17 @@ for f in "${HW_PATHS[@]}"; do
       name=$0
       ispub = ($0 ~ /^[[:space:]]*pub /) ? 1 : 0
       sub(/.*fn[[:space:]]+/, "", name); sub(/[(<].*/, "", name)
-      capturing=1; start=NR; body=""; depth=0; sig=""; insig=1
+      capturing=1; start=NR; body=""; callbody=""; depth=0; sig=""; insig=1
     }
     capturing {
       line=$0; gsub(/\t/, " ", line); body = body " " line
       if (insig) { sig = sig " " line; if (index(line,"{")>0) insig=0 }
+      else { callbody = callbody " " line }
       n=gsub(/\{/,"{"); m=gsub(/\}/,"}"); depth += n - m
       # rr: does the SIGNATURE (not the body) promise a fallible result?
       if (depth<=0 && index(body,"{")>0) {
         rr = (sig ~ /->[[:space:]]*(crate::)?(error::)?Result/) ? 1 : 0
-        print name "\t" FILE "\t" start "\t" ispub "\t" rr "\t" body
+        print FILE ":" start "\t" name "\t" FILE "\t" start "\t" ispub "\t" rr "\t" body "\t" callbody
         capturing=0
       }
     }' "$f"
@@ -172,13 +175,13 @@ done > "$WORK/fns.tsv"
 
 # Pass 2 -- direct boundary contact per fn.
 : > "$WORK/direct.tsv"
-while IFS=$'\t' read -r name file start ispub rr body; do
+while IFS=$'\t' read -r key name file start ispub rr body callbody; do
   hit=0
   for needle in "${ALLOW_CRATES[@]}" "${ALLOW_HOST[@]}" "${ALLOW_CONSTRUCTS[@]}"; do
     [ -n "$needle" ] || continue
     case "$body" in *"$needle"*) hit=1; break ;; esac
   done
-  printf '%s\t%d\n' "$name" "$hit" >> "$WORK/direct.tsv"
+  printf '%s\t%s\t%d\n' "$key" "$name" "$hit" >> "$WORK/direct.tsv"
 done < "$WORK/fns.tsv"
 
 # Pass 3 -- transitive closure over intra-crate call edges. A fn reaches a
@@ -188,14 +191,17 @@ cp "$WORK/direct.tsv" "$WORK/reach.tsv"
 total_fns=$(wc -l < "$WORK/fns.tsv")
 for _ in $(seq 1 "$total_fns"); do
   changed=0
-  while IFS=$'\t' read -r name file start ispub rr body; do
-    cur=$(awk -F'\t' -v n="$name" '$1==n {print $2; exit}' "$WORK/reach.tsv")
+  while IFS=$'\t' read -r key name file start ispub rr body callbody; do
+    cur=$(awk -F'\t' -v k="$key" '$1==k {print $3; exit}' "$WORK/reach.tsv")
     [ "$cur" = "1" ] && continue
-    while IFS=$'\t' read -r cname creach; do
+    while IFS=$'\t' read -r ckey cname creach; do
       [ "$creach" = "1" ] || continue
-      [ "$cname" = "$name" ] && continue
-      case "$body" in *"$cname"*)
-        awk -F'\t' -v n="$name" 'BEGIN{OFS="\t"} {if ($1==n) $2=1; print}' "$WORK/reach.tsv" > "$WORK/r2" \
+      [ "$ckey" = "$key" ] && continue
+      # A CALL SITE `cname(` in the body WITHOUT its signature. Bare-name
+      # matching let a fn match its own declaration, and any identifier that
+      # merely contained the name.
+      case "$callbody" in *"$cname("*)
+        awk -F'\t' -v k="$key" 'BEGIN{OFS="\t"} {if ($1==k) $3=1; print}' "$WORK/reach.tsv" > "$WORK/r2" \
           && mv "$WORK/r2" "$WORK/reach.tsv"
         changed=1; break ;;
       esac
@@ -206,11 +212,11 @@ for _ in $(seq 1 "$total_fns"); do
 done
 
 # Pass 4 -- verdicts, public fns only.
-while IFS=$'\t' read -r name file start ispub rr body; do
+while IFS=$'\t' read -r key name file start ispub rr body callbody; do
   [ "$ispub" = "1" ] || continue
   checked=$((checked + 1))
 
-  reaches=$(awk -F'\t' -v n="$name" '$1==n {print $2; exit}' "$WORK/reach.tsv")
+  reaches=$(awk -F'\t' -v k="$key" '$1==k {print $3; exit}' "$WORK/reach.tsv")
 
   refuses=0
   for needle in "${REFUSAL_SYMS[@]}"; do
@@ -228,6 +234,13 @@ while IFS=$'\t' read -r name file start ispub rr body; do
       esac
       ;;
   esac
+
+  # An explicitly allowlisted, justified compile-time predicate is not a lie.
+  # The exception is recorded in the charter and must be defended there.
+  for sp in "${SOUND_PREDS[@]}"; do
+    [ -n "$sp" ] || continue
+    [ "$sp" = "$file:$name" ] && cap_lie=0
+  done
 
   if [ "$cap_lie" = "1" ] && [ "$reaches" != "1" ]; then
     ROWS+=("$file:$start\t$name\tCAPABILITY-WITHOUT-PROBE\tVIOLATION")
@@ -250,7 +263,22 @@ while IFS=$'\t' read -r name file start ispub rr body; do
     #
     # A fn returning a plain value (`ndim() -> usize`, `as_mut_ptr() -> *mut u8`)
     # transforms data it was handed and claims no hardware, so it is admissible.
-    if [ "$rr" = "1" ]; then
+    # Narrow, auditable exemption. A `self`-method that only transforms
+    # memory its own type already owns is not obtaining anything from
+    # hardware. This is an explicit charter list, NOT a structural rule:
+    # an earlier attempt cleared any self-method in a file where anything
+    # reached a boundary, and that cleared 0.2.0's sign(), verify() and
+    # delete() -- the very defects the gate exists to catch. A rule that
+    # broad is worse than the false positive it removes.
+    exempt=0
+    for ex in "${OWNED_STATE_OPS[@]}"; do
+      [ -n "$ex" ] || continue
+      [ "$ex" = "$file:$name" ] && exempt=1
+    done
+
+    if [ "$rr" = "1" ] && [ "$exempt" = "1" ]; then
+      ROWS+=("$file:$start\t$name\towns-real-state\tOK")
+    elif [ "$rr" = "1" ]; then
       ROWS+=("$file:$start\t$name\tFABRICATES\tVIOLATION")
       violations=$((violations + 1))
       printf '\033[0;31mVIOLATION\033[0m %s:%s  pub fn %s\n' "$file" "$start" "$name" >&2

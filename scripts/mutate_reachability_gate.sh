@@ -47,6 +47,11 @@ suite() {
   # fixture 2 -- a capability asserted as a constant -- must be RED
   set +e; FIXTURE_DIR="$FIX/red_capability_lie" bash "$g" >/dev/null 2>&1; e=$?; set -e
   [ "$e" -eq 1 ] || return 1
+  # NAME COLLISION -- two files, same fn name, one real and one fabricating.
+  # Every other fixture dir holds ONE file, and that isolation is what let the
+  # name-keyed reach table ship green.
+  set +e; FIXTURE_DIR="$FIX/red_name_collision" bash "$g" >/dev/null 2>&1; e=$?; set -e
+  [ "$e" -eq 1 ] || return 1
   # Positive controls. Each asserts the exit code AND the specific diagnostic.
   #
   # Checking only the exit code made these equivalent mutants: the guards are
@@ -117,6 +122,7 @@ declare -a MUTANTS=(
   "exit-zero-always|s/^\\[ \"\$violations\" -eq 0 \\] .. exit 1\$/: /"
   "no-extraction-guard|s/die \"extracted 0 functions from the module set -- vacuous pass refused\"/: /"
   "drop-charter-mapping|charter-mapping"
+  "name-keyed-reach|name-keyed"
 )
 
 killed=0
@@ -143,7 +149,13 @@ for entry in "${MUTANTS[@]}"; do
     reaches=1)
       sed -i 's|^  reaches=\$(awk.*$|  reaches=1|' "$WORK/mutant.sh" ;;
     rr-zero)
-      sed -i 's/    if \[ "\$rr" = "1" \]; then/    if [ "$rr" = "NEVER" ]; then/' "$WORK/mutant.sh" ;;
+      # Neutralise the Result discriminator wherever it appears.
+      sed -i 's/\[ "\$rr" = "1" \]/[ "$rr" = "NEVER" ]/g' "$WORK/mutant.sh" ;;
+    name-keyed)
+      # Revert the verdict lookup to the bare NAME -- the exact defect the gate
+      # shipped with, where a fabricator inherited the verdict of any
+      # same-named function elsewhere in the module set.
+      sed -i 's/-v k="$key" .\$1==k {print \$3; exit}./-v n="$name" '"'"'$2==n {print $3; exit}'"'"'/' "$WORK/mutant.sh" ;;
     charter-mapping)
       sed -i 's/^  if \[ "\$unmapped" -ne 0 \]; then$/  if [ "$unmapped" = "NEVER" ]; then/' "$WORK/mutant.sh" ;;
     cap_lie=0)
