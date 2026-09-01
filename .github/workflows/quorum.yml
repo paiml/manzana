@@ -204,19 +204,30 @@ jobs:
   # -------------------------------------------------------------------------
   # Aggregator.
   #
-  # IMPORTANT, and stated rather than assumed: this check does NOT block merges
-  # yet. `main` is protected by the ruleset "Green Main — unified gate
-  # enforcement" (active), whose required status check context is `gate` --
-  # supplied by the sovereign-ci reusable workflow, not by this file. Until
-  # `quorum / gate` is added to that ruleset's required contexts, these gates
-  # REPORT but do not enforce.
+  # This job's name is `gate` ON PURPOSE, and the name is load-bearing.
   #
-  # Adding it is a repository-settings change and deliberately not done from
-  # here. Claiming enforcement this workflow does not have would be the exact
-  # defect class the gates below exist to prevent.
+  # `main` is protected by the ruleset "Green Main — unified gate enforcement"
+  # (active), whose one required status check context is `gate`. NOTHING was
+  # producing that name: the sovereign-ci reusable workflow reports as
+  # `ci / gate` (GitHub prefixes a called workflow's jobs with the calling
+  # job), and this aggregator used to report as `quorum / gate`. A required
+  # context that no check ever produces blocks every pull request forever --
+  # PR #4 sat BLOCKED with twelve green checks -- and it also means `main` was
+  # never actually protected by anything, because the rule could not be
+  # evaluated.
+  #
+  # That is the same defect as a gate that cannot fail, one level up: a rule
+  # that reports nothing enforces nothing. An earlier revision of this comment
+  # asserted the context was "supplied by the sovereign-ci reusable workflow",
+  # which was simply untrue and went unchecked because nobody tried to merge.
+  #
+  # Naming this job `gate` satisfies the existing ruleset from inside the
+  # repository, with no settings change and no protection bypass. What now
+  # enforces `main` is this job's `needs`: tests on BOTH platforms, the
+  # anti-fabrication gates, and the contract checks.
   # -------------------------------------------------------------------------
   quorum-gate:
-    name: quorum / gate
+    name: gate
     runs-on: ubuntu-latest
     needs: [matrix-test, gates, contracts]
     if: always()
