@@ -299,13 +299,19 @@ pub fn is_available() -> bool {
 mod tests {
     use super::*;
 
-    // F031/F032: Platform detection
+    // F031/F032: Platform detection.
+    //
+    // The previous version bound the result and discarded it, so it asserted
+    // nothing and could not fail. Detection here is a compile-time target
+    // check, so its expected value is known exactly on every platform.
     #[test]
-    fn test_is_available_platform_detection() {
-        let available = NeuralEngineSession::is_available();
-        // On Apple Silicon: true, on Intel/other: false
-        // We just verify it doesn't panic
-        let _ = available;
+    fn test_is_available_matches_build_target() {
+        let expected = cfg!(all(target_os = "macos", target_arch = "aarch64"));
+        assert_eq!(
+            NeuralEngineSession::is_available(),
+            expected,
+            "ANE availability must follow the build target exactly"
+        );
     }
 
     #[test]
