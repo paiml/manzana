@@ -1,22 +1,35 @@
-#![allow(clippy::too_many_lines)]
-//! Hardware Discovery Example
+//! Hardware discovery example.
 //!
-//! Discovers and reports all available Apple hardware accelerators.
+//! Reports which Apple accelerators this machine has and, separately, what
+//! manzana can actually do with each. Those are different questions with
+//! different answers, so this program prints both instead of collapsing them
+//! into one count of "available" accelerators.
 //!
-//! Run with: cargo run --example `hardware_discovery`
+//! Run with `cargo run --example hardware_discovery`. It runs on any platform;
+//! on a non-Apple host every panel reports absence.
 
 use manzana::{
     afterburner::AfterburnerMonitor, metal::MetalCompute, neural_engine::NeuralEngineSession,
     unified_memory::UmaBuffer,
 };
 
+const TOP: &str = "┌─────────────────────────────────────────────────────────────┐";
+const MID: &str = "├─────────────────────────────────────────────────────────────┤";
+const BOT: &str = "└─────────────────────────────────────────────────────────────┘";
+const WIDE: &str = "╔════════════════════════════════════════════════════════════╗";
+const WIDE_END: &str = "╚════════════════════════════════════════════════════════════╝";
+
+/// Width available for text inside a single-ruled panel.
+const ROW: usize = 59;
+/// Width available for text inside a double-ruled panel.
+const WIDE_ROW: usize = 58;
+
 fn main() {
-    println!("╔════════════════════════════════════════════════════════════╗");
-    println!("║          MANZANA - Apple Hardware Discovery                ║");
-    println!("╚════════════════════════════════════════════════════════════╝");
+    println!("{WIDE}");
+    wide_row("         MANZANA - Apple Hardware Discovery");
+    println!("{WIDE_END}");
     println!();
 
-    // Check platform
     println!(
         "Platform: {}",
         if manzana::is_macos() {
@@ -28,173 +41,205 @@ fn main() {
     println!("Manzana Version: {}", manzana::VERSION);
     println!();
 
-    // Afterburner FPGA (Mac Pro 2019+)
-    println!("┌─────────────────────────────────────────────────────────────┐");
-    println!("│ Afterburner FPGA (Mac Pro 2019+)                            │");
-    println!("├─────────────────────────────────────────────────────────────┤");
-    if AfterburnerMonitor::is_available() {
-        println!("│ Status: ✓ AVAILABLE                                         │");
-        if let Some(monitor) = AfterburnerMonitor::new() {
-            if let Ok(stats) = monitor.stats() {
-                println!(
-                    "│ Active Streams: {:>3} / {:>3}                                 │",
-                    stats.streams_active, stats.streams_capacity
-                );
-                println!(
-                    "│ Utilization: {:>5.1}%                                        │",
-                    stats.utilization_percent
-                );
-            }
-        }
-    } else {
-        println!("│ Status: ✗ Not available (requires Mac Pro with Afterburner) │");
-    }
-    println!("└─────────────────────────────────────────────────────────────┘");
-    println!();
-
-    // Neural Engine (Apple Silicon)
-    println!("┌─────────────────────────────────────────────────────────────┐");
-    println!("│ Apple Neural Engine (Apple Silicon)                         │");
-    println!("├─────────────────────────────────────────────────────────────┤");
-    if NeuralEngineSession::is_available() {
-        println!("│ Status: ✓ AVAILABLE                                         │");
-        if let Some(caps) = NeuralEngineSession::capabilities() {
-            println!(
-                "│ Performance: {:>5.1} TOPS                                    │",
-                caps.tops
-            );
-            println!(
-                "│ Cores: {:>2}                                                  │",
-                caps.core_count
-            );
-        }
-    } else {
-        println!("│ Status: ✗ Not available (requires Apple Silicon)            │");
-    }
-    println!("└─────────────────────────────────────────────────────────────┘");
-    println!();
-
-    // Metal GPU
-    println!("┌─────────────────────────────────────────────────────────────┐");
-    println!("│ Metal GPU Compute                                           │");
-    println!("├─────────────────────────────────────────────────────────────┤");
-    if MetalCompute::is_available() {
-        println!("│ Status: ✓ AVAILABLE                                         │");
-        let devices = MetalCompute::devices();
-        for (i, device) in devices.iter().enumerate() {
-            println!("│ GPU {}: {:<50} │", i, truncate(&device.name, 50));
-            println!(
-                "│   VRAM: {:>6.1} GB | UMA: {}                              │",
-                device.vram_gb(),
-                if device.has_unified_memory {
-                    "Yes"
-                } else {
-                    "No "
-                }
-            );
-        }
-    } else {
-        println!("│ Status: ✗ Not available                                     │");
-    }
-    println!("└─────────────────────────────────────────────────────────────┘");
-    println!();
-
-    // Secure Enclave support was REMOVED in 0.3.0. manzana ships no
-    // cryptography; use the `security-framework` crate.
-    println!("┌─────────────────────────────────────────────────────────────┐");
-    println!("│ Secure Enclave                                              │");
-    println!("├─────────────────────────────────────────────────────────────┤");
-    println!("│ Removed in 0.3.0 — manzana implements no cryptography.      │");
-    println!("│ Use the `security-framework` crate.                         │");
-    println!("└─────────────────────────────────────────────────────────────┘");
-    println!();
-
-    // Unified Memory
-    println!("┌─────────────────────────────────────────────────────────────┐");
-    println!("│ Unified Memory Architecture (Apple Silicon)                 │");
-    println!("├─────────────────────────────────────────────────────────────┤");
-    // The chip's unified memory and manzana's ability to USE it are different
-    // questions, and on Apple Silicon they have different answers. Printing
-    // only "Not available" next to a Metal panel reading "UMA: Yes" made this
-    // program appear to contradict itself.
-    let chip_uma = if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-        "yes (Apple Silicon)"
-    } else {
-        "no"
-    };
-    println!("│ Chip has unified memory:  {chip_uma:<34}│");
-    println!(
-        "│ GPU-visible via manzana:  {:<34}│",
-        "no (not implemented)"
-    );
-    println!("│{:<61}│", "");
-    println!(
-        "│{:<61}│",
-        " UmaBuffer is a page-aligned HOST allocation. It is not an"
-    );
-    println!("│{:<61}│", " MTLBuffer and no GPU can read it.");
-    match UmaBuffer::new(4096) {
-        Ok(buffer) => println!(
-            "│ Host allocation: {:<43}│",
-            format!(
-                "{} bytes, page-aligned: {}",
-                buffer.len(),
-                if buffer.is_aligned() { "yes" } else { "NO" }
-            )
-        ),
-        Err(e) => println!("│ Host allocation failed: {:<36}│", e.to_string()),
-    }
-    println!("└─────────────────────────────────────────────────────────────┘");
-    println!();
-
-    // Summary
-    println!("╔════════════════════════════════════════════════════════════╗");
-    // PRESENT and USABLE are counted separately. Reporting "2 accelerators
-    // available" for an ANE and a GPU on which no operation can be performed
-    // is the shape of claim this release exists to remove.
-    let present = [
-        AfterburnerMonitor::is_available(),
-        NeuralEngineSession::is_available(),
-        MetalCompute::is_available(),
-    ]
-    .iter()
-    .filter(|&&x| x)
-    .count();
-    println!(
-        "║ Detected: {:<49}║",
-        format!("{present} accelerator(s) present")
-    );
-    println!(
-        "║ Usable:   {:<49}║",
-        format!(
-            "{} through manzana today",
-            if manzana::is_acceleration_usable() {
-                "some"
-            } else {
-                "none"
-            }
-        )
-    );
-    println!("║{:<60}║", "");
-    println!(
-        "║{:<60}║",
-        " Implemented: Afterburner stats, Metal enumeration, and"
-    );
-    println!(
-        "║{:<60}║",
-        " page-aligned host buffers. Metal compute, CoreML"
-    );
-    println!(
-        "║{:<60}║",
-        " inference and ANE capability querying are not."
-    );
-    println!("╚════════════════════════════════════════════════════════════╝");
+    afterburner_panel();
+    neural_engine_panel();
+    let devices = metal_panel();
+    secure_enclave_panel();
+    unified_memory_panel(&devices);
+    summary_panel(&devices);
 }
 
-fn truncate(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
-        format!("{s:<max_len$}")
+/// Afterburner: presence and statistics are both implemented, via `IOKit`.
+fn afterburner_panel() {
+    panel("Afterburner FPGA (Mac Pro 2019+)");
+    if let Some(monitor) = AfterburnerMonitor::new() {
+        row("Present: yes (IOKit service matched)");
+        match monitor.stats() {
+            Ok(stats) => {
+                row(&format!(
+                    "Active streams: {} of {}",
+                    stats.streams_active, stats.streams_capacity
+                ));
+                row(&format!("Utilization: {:.1}%", stats.utilization_percent));
+            }
+            Err(e) => row(&format!("Statistics query failed: {e}")),
+        }
+    } else if cfg!(target_os = "macos") {
+        row("Present: no card found (this Mac has no Afterburner fitted)");
     } else {
-        format!("{}...", &s[..max_len - 3])
+        // NOT "no card fitted". Verified on a MacPro7,1 running Linux with an
+        // Afterburner installed: lspci shows it at 0f:00.0, Apple 106b:0205,
+        // and manzana still cannot read it. Saying "no card" there would be a
+        // false statement of a REASON -- the exact defect class this release
+        // exists to remove.
+        row("Cannot look: manzana reads the card through IOKit, which");
+        row("exists only on macOS. A fitted card is unreadable here.");
+    }
+    row("");
+    row("Implemented: presence and statistics, read from IOKit.");
+    println!("{BOT}");
+    println!();
+}
+
+/// Neural Engine: presence only. Nothing can be run on it through manzana.
+fn neural_engine_panel() {
+    panel("Apple Neural Engine (Apple Silicon)");
+    if NeuralEngineSession::is_available() {
+        row("Present: yes (build target is aarch64 macOS)");
+        row("This is a compile-time check, not a hardware probe. It");
+        row("is sound because every Apple Silicon part ships an ANE.");
+    } else {
+        row("Present: no (requires Apple Silicon)");
+    }
+    row("");
+    row("Capabilities (TOPS, cores): not queried. capabilities()");
+    row("returns None rather than an M1 datasheet figure.");
+    row("Model loading and inference: not implemented.");
+    println!("{BOT}");
+    println!();
+}
+
+/// Metal: device enumeration is implemented; compute on those devices is not.
+///
+/// Returns the enumerated devices so later panels can answer from the same
+/// data rather than from a second, possibly disagreeing, source.
+fn metal_panel() -> Vec<manzana::MetalDevice> {
+    let devices = MetalCompute::devices();
+    panel("Metal GPU");
+    if devices.is_empty() {
+        row("Present: no device enumerated");
+        row("Enumeration shells out to `system_profiler`; when that");
+        row("reports nothing, manzana reports nothing.");
+    } else {
+        row(&format!(
+            "Present: yes ({} device(s) enumerated)",
+            devices.len()
+        ));
+        for (i, device) in devices.iter().enumerate() {
+            row("");
+            row(&format!("GPU {i}: {}", device.name));
+            row(&format!(
+                "  VRAM: {:.1} GB (from system_profiler)",
+                device.vram_gb()
+            ));
+            row(&format!(
+                "  Unified memory: {} (inferred from the name)",
+                yes_no(device.has_unified_memory)
+            ));
+            row("  registry_id, thread limits and headless flag are");
+            row("  synthesized or hardcoded; see the MetalDevice docs.");
+        }
+    }
+    row("");
+    row("Implemented: enumeration (name, VRAM). Shader compilation,");
+    row("buffer allocation and dispatch are not - see the");
+    row("metal_compute example for their refusals.");
+    println!("{BOT}");
+    println!();
+    devices
+}
+
+/// Secure Enclave support was removed in 0.3.0; manzana ships no cryptography.
+fn secure_enclave_panel() {
+    panel("Secure Enclave");
+    row("Removed in 0.3.0. manzana implements no cryptography and");
+    row("makes no Security framework call. For Secure Enclave and");
+    row("Keychain access use the `security-framework` crate.");
+    println!("{BOT}");
+    println!();
+}
+
+/// Unified memory: a chip property and a manzana capability, kept apart.
+///
+/// The chip answer is read from the same enumerated devices the Metal panel
+/// printed, so the two panels cannot disagree.
+fn unified_memory_panel(devices: &[manzana::MetalDevice]) {
+    let chip_has_uma = devices.iter().any(|d| d.has_unified_memory);
+
+    panel("Unified Memory");
+    row(&format!(
+        "This chip has unified memory:  {}",
+        yes_no(chip_has_uma)
+    ));
+    row("manzana can hand you GPU-visible memory:  no");
+    row("");
+    row("Those are different questions. On Apple Silicon the CPU and");
+    row("GPU do share physical memory, but a host allocation becomes");
+    row("GPU-visible only once it is wrapped in an MTLBuffer, and");
+    row("manzana never does that. UmaBuffer is a page-aligned HOST");
+    row("allocation: real, zeroed, freed on drop, and readable only");
+    row("by the CPU.");
+    row("");
+    match UmaBuffer::new(4096) {
+        Ok(buffer) => row(&format!(
+            "Host allocation: {} bytes, page-aligned: {}",
+            buffer.len(),
+            yes_no(buffer.is_aligned())
+        )),
+        Err(e) => row(&format!("Host allocation failed: {e}")),
+    }
+    println!("{BOT}");
+    println!();
+}
+
+/// Counts detected hardware, then says what can be done with it.
+fn summary_panel(devices: &[manzana::MetalDevice]) {
+    let detected = [
+        AfterburnerMonitor::is_available(),
+        NeuralEngineSession::is_available(),
+        !devices.is_empty(),
+    ]
+    .iter()
+    .filter(|&&present| present)
+    .count();
+
+    println!("{WIDE}");
+    wide_row(&format!("Accelerators detected: {detected} of 3"));
+    wide_row("");
+    wide_row("Detection is not usability. Implemented today:");
+    wide_row("  Afterburner    presence and statistics (IOKit)");
+    wide_row("  Metal GPU      enumeration only (name, VRAM)");
+    wide_row("  Neural Engine  presence only");
+    wide_row("  Host memory    page-aligned buffers (any platform)");
+    wide_row("");
+    wide_row("Metal compute, CoreML inference, ANE capability queries");
+    wide_row("and GPU-visible memory are not implemented. They return");
+    wide_row("Error::Unimplemented rather than a fabricated result.");
+    println!("{WIDE_END}");
+}
+
+/// Open a single-ruled panel with `title` as its heading.
+fn panel(title: &str) {
+    println!("{TOP}");
+    row(title);
+    println!("{MID}");
+}
+
+/// Print one line inside a single-ruled panel.
+fn row(text: &str) {
+    println!("│ {:<ROW$} │", fit(text, ROW));
+}
+
+/// Print one line inside a double-ruled panel.
+fn wide_row(text: &str) {
+    println!("║ {:<WIDE_ROW$} ║", fit(text, WIDE_ROW));
+}
+
+/// Truncate `text` to `max` characters so a panel border cannot be pushed out.
+fn fit(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        text.to_string()
+    } else {
+        let kept: String = text.chars().take(max - 1).collect();
+        format!("{kept}…")
+    }
+}
+
+/// Render a boolean as the word this program uses for it everywhere.
+const fn yes_no(value: bool) -> &'static str {
+    if value {
+        "yes"
+    } else {
+        "no"
     }
 }

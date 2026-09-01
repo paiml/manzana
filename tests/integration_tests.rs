@@ -140,7 +140,6 @@ fn test_error_constructors_all_variants() {
         Error::iokit(0, "test"),
         Error::metal("test"),
         Error::coreml("test"),
-        Error::security(-1),
         Error::invalid_input("test"),
         Error::timeout(1000),
         Error::permission_denied("op"),

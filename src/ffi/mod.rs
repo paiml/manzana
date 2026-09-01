@@ -1,41 +1,76 @@
-//! FFI Quarantine Zone - All unsafe code isolated here.
+//! The FFI quarantine zone: foreign-function bindings and the unsafe code
+//! that calls them.
 //!
-//! # Safety Architecture
+//! This module is private. Nothing in it is re-exported, so no type or
+//! function documented here is part of manzana's public API. The public
+//! surface it backs is [`crate::afterburner`].
 //!
-//! This module contains most, but not all, of the unsafe code in manzana:
-//! `src/unified_memory.rs` carries its own `#![allow(unsafe_code)]` for its
-//! page-aligned allocation and RAII `Drop`. The crate root uses
-//! `#![deny(unsafe_code)]` -- `deny`, not `forbid`, precisely because those
-//! two overrides exist. Earlier revisions of this file claimed otherwise.
+//! # Where unsafe code lives
 //!
-//! ## Design Principles (Iron Lotus Framework)
+//! The crate root sets `#![deny(unsafe_code)]`. Two modules override it:
+//! this one, and `src/unified_memory/mod.rs`, which needs `unsafe` for a
+//! page-aligned host allocation and its RAII `Drop`. `deny` rather than
+//! `forbid` is precisely because those two overrides exist — `forbid` cannot
+//! be lifted. So "all unsafe code is in `src/ffi/`" would be false, and this
+//! module makes no such claim; what is true is that all *foreign* calls are
+//! here.
 //!
-//! - **Poka-Yoke**: Type-safe wrappers prevent misuse at compile time
-//! - **Jidoka**: All unsafe blocks have SAFETY comments
-//! - **Genchi Genbutsu**: Direct hardware queries, no simulation. This holds
-//!   for `iokit.rs`, the only file here.
-//!
-//! ## Safety Rules (from specification S1-S6)
-//!
-//! - S1: Every `unsafe` block has `// SAFETY:` comment
-//! - S2: No raw pointers escape FFI module
-//! - S3: All C strings validated as UTF-8 or handled
-//! - S4: CFRelease called for every CFRetain
-//! - S5: No transmute without size/alignment proof
-//! - S6: Thread safety explicitly documented
-//!
-//! # Module Structure
+//! # Module structure
 //!
 //! ```text
 //! ffi/
-//! ├── mod.rs          # This file - module router
-//! └── iokit.rs        # IOKit bindings (Afterburner discovery and stats)
+//! ├── mod.rs          # this file: platform routing
+//! └── iokit.rs        # IOKit bindings (macOS only): Afterburner discovery
+//!                      and registry property reads
 //! ```
 //!
-//! That is the whole directory. Earlier revisions of this doc also listed
-//! `coreml.rs`, `metal_sys.rs` and `security.rs`; none of the three has ever
-//! existed here, and `security.rs` was deleted outright in 0.3.0 along with
-//! all cryptography. A module tree in a doc comment is a claim like any other.
+//! That is the whole directory. `mod.rs` selects between `iokit.rs` on macOS
+//! and the inline non-macOS module below; there is no CoreML, Metal or
+//! Security framework binding anywhere in manzana. `src/ffi/security.rs` was
+//! deleted in 0.3.0 with the rest of the cryptography.
+//!
+//! # Safety rules (specification S1-S6), and where each one stands
+//!
+//! - **S1 — every `unsafe` block carries a `// SAFETY:` comment.** Holds. All
+//!   six unsafe blocks in `iokit.rs` are annotated, and
+//!   `clippy::undocumented_unsafe_blocks = "deny"` in `Cargo.toml` fails the
+//!   build if one is not.
+//! - **S2 — no raw pointer escapes this module.** Holds. `AfterburnerService`
+//!   stores an `io_service_t` (a `u32` handle) in a private field, and
+//!   `AfterburnerRawStats` is plain data. No pointer appears in any signature
+//!   reachable from outside `ffi`. (`unified_memory` keeps a `NonNull<u8>`,
+//!   but that is a separate module with its own invariants, not this one's.)
+//! - **S3 — C strings are validated, not assumed.** Holds.
+//!   `CString::new(...).ok()?` rejects an interior NUL before any call, and
+//!   `CStr::to_str().ok()` turns non-UTF-8 registry names into `None` rather
+//!   than a lossy or invalid `String`.
+//! - **S4 — Core Foundation reference counts balance.** Holds, though not by
+//!   the route the rule names: nothing here calls `CFRetain`. There are two
+//!   owned references in total. The matching dictionary from
+//!   `IOServiceMatching` is consumed by `IOServiceGetMatchingService` and must
+//!   not be released; the property dictionary from
+//!   `IORegistryEntryCreateCFProperties` arrives under the Create Rule and is
+//!   handed to `CFDictionary::wrap_under_create_rule`, which releases it on
+//!   drop. The `io_service_t` itself is released by `AfterburnerService::drop`.
+//! - **S5 — no `transmute` without a size and alignment proof.** Holds
+//!   vacuously: there is no `transmute` in this module.
+//! - **S6 — thread safety is explicitly documented.** Holds on macOS, where
+//!   `AfterburnerService` carries a `PhantomData<*const ()>` that makes it
+//!   `!Send + !Sync`, matching IOKit's own thread-safety rules. It does *not*
+//!   hold structurally on other targets: the fallback `AfterburnerService`
+//!   below is a unit struct and is therefore `Send + Sync`. That difference is
+//!   not reachable — `find_afterburner_service` returns `None` there, so no
+//!   value of the type can be obtained — but the guarantee is a platform
+//!   accident off macOS, not an enforced one.
+//!
+//! # No simulation
+//!
+//! Presence and statistics both come from live IOKit calls. Where a value
+//! cannot be obtained, the code returns `None` or an error. The one place a
+//! value is substituted rather than reported missing is
+//! `parse_afterburner_properties`, which fills in defaults for registry
+//! properties it does not find; that substitution is visible to callers
+//! through [`crate::afterburner::AfterburnerStats`], which documents it.
 
 // Allow unsafe in this module only - quarantine zone
 #![allow(unsafe_code)]
@@ -43,42 +78,63 @@
 #[cfg(target_os = "macos")]
 pub mod iokit;
 
-// Non-macOS implementations. These are not stubs in the fabricating sense:
-// they report unavailability rather than inventing a result.
+/// The IOKit surface on targets that have no IOKit.
+///
+/// Every entry point reports absence. Nothing here manufactures a statistic,
+/// and no `unsafe` code is compiled on these targets.
 #[cfg(not(target_os = "macos"))]
 pub mod iokit {
-    //! IOKit surface for platforms that have no IOKit.
-    //!
-    //! Every entry point reports absence. Nothing here manufactures a value.
-
     use crate::error::{Error, Subsystem};
 
-    /// Always `None`: there is no IOKit on this platform.
+    /// Always `None`: there is no IOKit on this platform to search.
     pub const fn find_afterburner_service() -> Option<AfterburnerService> {
         None
     }
 
-    /// Placeholder-free service handle: it can never be constructed here,
-    /// because `find_afterburner_service` always returns `None`.
+    /// A service handle that cannot be obtained here.
+    ///
+    /// It exists so that [`crate::afterburner::AfterburnerMonitor`] type-checks
+    /// on every target. `find_afterburner_service` never returns one, so no
+    /// method on it is reachable through manzana's public API.
     pub struct AfterburnerService;
 
     impl AfterburnerService {
-        /// Always `Err(NotAvailable)`: unreachable, since no value of this
-        /// type can be obtained on a non-macOS target.
+        /// Always `Err(NotAvailable)`.
+        ///
+        /// # Errors
+        ///
+        /// [`Error::NotAvailable`] for [`Subsystem::Afterburner`], always: the
+        /// hardware cannot be present on a non-macOS target. It is deliberately
+        /// not `Unimplemented` — the operation is implemented, the machine
+        /// simply has no card.
+        ///
+        /// Unreachable via `find_afterburner_service`, which yields no value of
+        /// this type; the crate's own tests construct one directly to exercise
+        /// the refusal.
         #[allow(clippy::unused_self)]
         pub const fn get_stats(&self) -> Result<AfterburnerRawStats, Error> {
             Err(Error::not_available(Subsystem::Afterburner))
         }
     }
 
-    /// Raw stats from IOKit.
+    /// Raw statistics as read from IOKit, before range checking.
+    ///
+    /// Mirrors the macOS definition field for field so that
+    /// `crate::afterburner::convert_raw_stats` compiles on every target. No
+    /// value of it is ever produced from hardware here.
     #[derive(Debug, Clone, Default)]
     pub struct AfterburnerRawStats {
-        pub streams_active: u32,
-        pub streams_capacity: u32,
-        pub utilization: f64,
-        pub throughput_fps: f64,
+        /// Active decode streams.
+        pub streams_active: Option<u32>,
+        /// Maximum concurrent stream capacity.
+        pub streams_capacity: Option<u32>,
+        /// FPGA utilization, unclamped.
+        pub utilization: Option<f64>,
+        /// Decode throughput in frames per second, unclamped.
+        pub throughput_fps: Option<f64>,
+        /// FPGA temperature in Celsius, if reported.
         pub temperature: Option<f64>,
+        /// Power draw in watts, if reported.
         pub power: Option<f64>,
     }
 }

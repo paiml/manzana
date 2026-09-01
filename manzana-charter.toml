@@ -28,8 +28,12 @@ paths = [
     "src/neural_engine/mod.rs",
     "src/metal/mod.rs",
     "src/unified_memory/mod.rs",
-    "src/afterburner.rs",
+    "src/afterburner/mod.rs",
     "src/ffi/iokit.rs",
+    # Shells out to system_profiler -- a real external boundary.
+    "src/metal/detect.rs",
+    # Owns the alloc_zeroed/dealloc pair.
+    "src/unified_memory/buffer.rs",
 ]
 
 # Boundaries that count as "reaching real hardware". A call resolving into one
@@ -75,7 +79,7 @@ compile_time_sound = [
 [owned_state_ops]
 functions = [
     # Writes into an allocation UmaBuffer::new obtained via alloc_zeroed.
-    "src/unified_memory/mod.rs:copy_from_slice",
+    "src/unified_memory/buffer.rs:copy_from_slice",
     # A pure value constructor: validates `data.len() == prod(shape)` and
     # builds a Tensor from its arguments alone. It claims no hardware, and it
     # is contract-bound under manzana-tensor-v1 with three falsification tests
@@ -93,8 +97,13 @@ error_variant = "Unimplemented"
 [support_modules]
 paths = [
     "src/lib.rs",
-    "src/error.rs",
+    "src/error/mod.rs",
     "src/ffi/mod.rs",
+    # Pure value types, split out of their modules because documenting what
+    # they are NOT takes more room than the types themselves.
+    "src/metal/types.rs",
+    "src/afterburner/stats.rs",
+    "src/error/subsystem.rs",
 ]
 
 # Surfaces judged OUT of charter — a maintained Rust crate already covers them.

@@ -139,16 +139,10 @@ proptest! {
         prop_assert!(!other_err.is_timeout());
     }
 
-    // Property: error_code returns Some for IoKit and Security, None otherwise
+    // Property: error_code returns Some for IoKit, None otherwise
     #[test]
     fn prop_error_code_iokit(code in -1000i32..1000) {
         let err = Error::iokit(code, "test");
-        prop_assert_eq!(err.error_code(), Some(code));
-    }
-
-    #[test]
-    fn prop_error_code_security(code in -1000i32..1000) {
-        let err = Error::security(code);
         prop_assert_eq!(err.error_code(), Some(code));
     }
 
@@ -336,12 +330,6 @@ mod determinism_tests {
             assert!(!err.is_timeout());
         }
     }
-
-    // F099: Secure Enclave refuses consistently, for every input.
-    //
-    // The previous version of this test asserted that signing the same data
-    // twice produced identical bytes, describing it in its own comment as a
-    // "deterministic stub" -- it encoded the fake as the expected behaviour.
 
     // F099: UMA buffer operations deterministic
     #[test]

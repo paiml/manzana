@@ -1,11 +1,20 @@
-//! Metal GPU Compute Example
+//! Metal GPU example: what manzana can and cannot do with a Metal device.
 //!
-//! Demonstrates Metal GPU device enumeration, which is implemented, and
-//! reports the compute operations that are not.
+//! Enumerates the GPUs `system_profiler` reports, labels which printed fields
+//! were read from that report and which were not, then calls the compute
+//! entry points so their refusals are visible rather than merely described.
 //!
-//! Run with: cargo run --example `metal_compute`
+//! Run with `cargo run --example metal_compute`. On a host with no Metal
+//! device — any non-macOS machine — it says so and exits.
 
 use manzana::metal::MetalCompute;
+
+const TOP: &str = "┌─────────────────────────────────────────────────────────────┐";
+const MID: &str = "├─────────────────────────────────────────────────────────────┤";
+const BOT: &str = "└─────────────────────────────────────────────────────────────┘";
+
+/// Width available for text inside a panel.
+const ROW: usize = 59;
 
 fn main() {
     println!("╔════════════════════════════════════════════════════════════╗");
@@ -13,78 +22,103 @@ fn main() {
     println!("╚════════════════════════════════════════════════════════════╝");
     println!();
 
-    // Check availability
-    if !MetalCompute::is_available() {
-        println!("❌ Metal not available on this system.");
-        println!("   Requires: macOS with Metal-capable GPU");
+    let devices = MetalCompute::devices();
+    if devices.is_empty() {
+        println!("Metal not available on this system.");
+        println!("Enumeration runs `system_profiler SPDisplaysDataType`, which");
+        println!("reported no GPU here. Requires macOS with a Metal-capable GPU.");
         return;
     }
 
-    // Enumerate all Metal devices
-    let devices = MetalCompute::devices();
     println!("Found {} Metal device(s):", devices.len());
     println!();
 
-    for (i, device) in devices.iter().enumerate() {
-        println!("┌─────────────────────────────────────────────────────────────┐");
-        println!("│ GPU {}: {:<52} │", i, device.name);
-        println!("├─────────────────────────────────────────────────────────────┤");
-        println!("│ Registry ID: {:<46} │", device.registry_id);
-        println!(
-            "│ VRAM: {:>6.1} GB                                            │",
-            device.vram_gb()
-        );
-        println!(
-            "│ Max Threads/Group: {:>6}                                   │",
+    for device in &devices {
+        println!("{TOP}");
+        row(&format!("GPU {}: {}", device.index, device.name));
+        println!("{MID}");
+        row("Read from system_profiler:");
+        row(&format!("  Name:  {}", device.name));
+        row(&format!("  VRAM:  {:.1} GB", device.vram_gb()));
+        row("");
+        row("Not queried from the device - synthesized or derived:");
+        row(&format!(
+            "  Registry ID:        {} (enumeration index + 1)",
+            device.registry_id
+        ));
+        row(&format!(
+            "  Max threads/group:  {} (hardcoded literal)",
             device.max_threads_per_threadgroup
-        );
-        println!(
-            "│ Low Power: {:<5}  Headless: {:<5}  UMA: {:<5}              │",
-            if device.is_low_power { "Yes" } else { "No" },
-            if device.is_headless { "Yes" } else { "No" },
-            if device.has_unified_memory {
-                "Yes"
-            } else {
-                "No"
-            }
-        );
-        println!(
-            "│ Apple Silicon: {:<5}                                        │",
-            if device.is_apple_silicon() {
-                "Yes"
-            } else {
-                "No"
-            }
-        );
-        println!("└─────────────────────────────────────────────────────────────┘");
+        ));
+        row(&format!(
+            "  Headless:           {} (never determined)",
+            device.is_headless
+        ));
+        row(&format!(
+            "  Low power:          {} (from the name string)",
+            device.is_low_power
+        ));
+        row(&format!(
+            "  Unified memory:     {} (from the name / build target)",
+            device.has_unified_memory
+        ));
+        println!("{BOT}");
         println!();
     }
 
-    // Everything past enumeration is unimplemented. Report that instead of
-    // aborting the demo halfway through a `?`, which is what happened when
-    // these calls were changed to return Error::Unimplemented.
+    compute_pipeline();
+}
+
+/// Call each compute entry point and print exactly what it returns.
+///
+/// The refusals are printed rather than propagated with `?`, so that one
+/// failure does not hide the ones after it.
+fn compute_pipeline() {
     println!("Compute pipeline:");
-    match MetalCompute::default_device() {
-        Ok(compute) => {
-            println!("  device        -> {}", compute.device_name());
-            match compute.compile_shader("kernel void vector_add() {}", "vector_add") {
-                Ok(_) => println!(
-                    "  compile_shader-> unexpectedly succeeded; verify the backend is real"
-                ),
-                Err(e) => println!("  compile_shader-> {e}"),
-            }
-            match compute.allocate_buffer(1024) {
-                Ok(_) => println!(
-                    "  allocate_buffer-> unexpectedly succeeded; verify the backend is real"
-                ),
-                Err(e) => println!("  allocate_buffer-> {e}"),
-            }
+
+    let compute = match MetalCompute::default_device() {
+        Ok(compute) => compute,
+        Err(e) => {
+            println!("  default_device  -> {e}");
+            return;
         }
-        Err(e) => println!("  no default device: {e}"),
+    };
+    println!("  default_device  -> {}", compute.device_name());
+
+    match compute.compile_shader("kernel void vector_add() {}", "vector_add") {
+        Ok(shader) => println!(
+            "  compile_shader  -> unexpectedly compiled {}; verify the backend",
+            shader.name()
+        ),
+        Err(e) => println!("  compile_shader  -> {e}"),
     }
+
+    match compute.allocate_buffer(1024) {
+        Ok(buffer) => println!(
+            "  allocate_buffer -> unexpectedly allocated {} bytes; verify the backend",
+            buffer.len()
+        ),
+        Err(e) => println!("  allocate_buffer -> {e}"),
+    }
+
+    println!("  dispatch        -> cannot be attempted: it takes a CompiledShader");
+    println!("                     and MetalBuffers, and neither can be obtained.");
+    println!("                     Called directly it returns the same refusal.");
     println!();
-    println!("Device enumeration is implemented and real, via `system_profiler`.");
+    println!("Enumeration above is real, parsed from `system_profiler`.");
     println!("Shader compilation, buffer allocation and dispatch are not");
-    println!("implemented and return Error::Unimplemented rather than pretending.");
+    println!("implemented: they return Error::Unimplemented on every platform,");
+    println!("for every argument, rather than a value that resembles a result.");
     println!("See docs/specifications/security-architecture-plan.md");
+}
+
+/// Print one line inside a panel, truncated so the border cannot be pushed out.
+fn row(text: &str) {
+    let text = if text.chars().count() <= ROW {
+        text.to_string()
+    } else {
+        let kept: String = text.chars().take(ROW - 1).collect();
+        format!("{kept}…")
+    };
+    println!("│ {text:<ROW$} │");
 }
