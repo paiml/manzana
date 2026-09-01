@@ -369,12 +369,15 @@ mod tests {
     }
 
     #[test]
-    fn test_raw_stats_default() {
+    fn test_raw_stats_default_reports_nothing_measured() {
+        // Default now means "IOKit reported nothing", not "the card is idle".
+        // Every field is None so an absent reading stays distinguishable from
+        // a measured zero -- the whole point of removing the unwrap_or(23).
         let stats = AfterburnerRawStats::default();
-        assert_eq!(stats.streams_active, 0);
-        assert_eq!(stats.streams_capacity, 0);
-        assert!((stats.utilization - 0.0).abs() < f64::EPSILON);
-        assert!((stats.throughput_fps - 0.0).abs() < f64::EPSILON);
+        assert!(stats.streams_active.is_none());
+        assert!(stats.streams_capacity.is_none());
+        assert!(stats.utilization.is_none());
+        assert!(stats.throughput_fps.is_none());
         assert!(stats.temperature.is_none());
         assert!(stats.power.is_none());
     }
@@ -382,10 +385,10 @@ mod tests {
     #[test]
     fn test_raw_stats_clone() {
         let stats = AfterburnerRawStats {
-            streams_active: 5,
-            streams_capacity: 23,
-            utilization: 45.5,
-            throughput_fps: 120.0,
+            streams_active: Some(5),
+            streams_capacity: Some(23),
+            utilization: Some(45.5),
+            throughput_fps: Some(120.0),
             temperature: Some(65.0),
             power: Some(25.0),
         };

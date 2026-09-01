@@ -5,7 +5,7 @@
 <h1 align="center">Manzana</h1>
 
 <p align="center">
-  <strong>Safe Rust interfaces to Apple hardware for Sovereign AI</strong>
+  <strong>Read-only discovery of Apple accelerator hardware on macOS</strong>
 </p>
 
 <p align="center">
@@ -18,127 +18,182 @@
 
 ---
 
-## ⚠️ Security Notice — read before depending on this crate
+Manzana tells you which Apple accelerators are present on the machine it is
+running on, and refuses — with a distinguishable error — every operation it
+cannot actually perform.
 
-**Manzana does not implement cryptography. Do not use it for signing, verification, key management, or attestation.**
+Three things work today: Afterburner FPGA detection and statistics through real
+IOKit FFI, Metal GPU enumeration through `system_profiler`, and page-aligned
+host buffer allocation. GPU compute, CoreML inference, and cryptography do not.
+The full split is in [Capabilities](#capabilities); the fields that look like
+device measurements but are not are in [Fields that are not
+measured](#fields-that-are-not-measured).
 
-Versions **0.1.0 and 0.2.0 have been yanked** from crates.io. Their
-`secure_enclave` module advertised hardware-backed P-256 ECDSA signing but was
-entirely stubbed:
+> ### Security
+>
+> **Manzana implements no cryptography. Do not use it for signing,
+> verification, key management, or attestation.**
+>
+> Versions **0.1.0 and 0.2.0 are yanked** ([RUSTSEC-2026-0273][adv]). Their
+> `secure_enclave` module documented hardware-backed P-256 ECDSA and returned
+> fabricated values. In 0.3.0 that module is deleted rather than repaired, so
+> the crate's cryptographic attack surface is zero. For real Secure Enclave and
+> Keychain access, use [`security-framework`][sf].
+>
+> Details, and what else was fabricated: [The 0.1.0 / 0.2.0
+> incident](#the-010--020-incident).
 
-- `create()` returned a fixed public key derived from a byte-sum of the key tag. No key was ever generated.
-- `sign()` returned a DER-shaped value whose `r` was 32 copies of a byte-sum of the message and whose `s` was 32 copies of a byte-sum of the tag — roughly 8 bits of entropy per half.
-- `verify()` recomputed that same value and compared bytes, so it accepted forgeries from anyone who knew the tag.
-- `delete()` reported success without deleting anything.
+## Contents
 
-The same pattern appeared elsewhere: `neural_engine::infer()` returned a
-correctly-shaped all-zero tensor, and `metal::dispatch()` returned `Ok(())`
-having dispatched nothing.
-
-**As of 0.3.0 the `secure_enclave` module is DELETED, not fixed.** manzana
-ships no cryptography at all. Wrapping `security-framework` would have added
-zero capability while permanently attaching this advisory to the crate, so the
-module is gone and the cryptographic attack surface is zero.
-
-The remaining fabricating operations (`neural_engine`, `metal`) now return
-`Error::Unimplemented`. Nothing in this crate will hand you a result that looks
-real but is not.
-
-For real Secure Enclave and Keychain access, use
-[`security-framework`](https://crates.io/crates/security-framework).
-
-Tracked as [**RUSTSEC-2026-0273**](https://rustsec.org/advisories/RUSTSEC-2026-0273.html)
-(category: `crypto-failure`), reported in
-[#3](https://github.com/paiml/manzana/issues/3). Full analysis and remediation
-plan: [`docs/specifications/security-architecture-plan.md`](docs/specifications/security-architecture-plan.md).
-
-Note that the advisory records the affected platform as `aarch64` macOS. The
-defect was in fact broader: `is_available()` returned `true` unconditionally on
-**x86_64** macOS as well, including pre-T2 Intel Macs with no Secure Enclave at
-all.
-
----
-
-## Table of Contents
-
-- [Overview](#overview)
-- [What actually works](#what-actually-works)
+- [Capabilities](#capabilities)
+- [Fields that are not measured](#fields-that-are-not-measured)
+- [Unified memory: two different questions](#unified-memory-two-different-questions)
+- [Behavior by host](#behavior-by-host)
 - [Installation](#installation)
 - [Usage](#usage)
-- [Examples](#examples)
-- [Safety Architecture](#safety-architecture)
+- [Example output](#example-output)
+- [Errors](#errors)
+- [Feature flags](#feature-flags)
+- [Safety architecture](#safety-architecture)
+- [Quality](#quality)
+- [The 0.1.0 / 0.2.0 incident](#the-010--020-incident)
 - [Contributing](#contributing)
 - [License](#license)
 
-## Overview
+## Capabilities
 
-Manzana provides safe Rust interfaces to Apple hardware subsystems on macOS.
-Today it is primarily a **hardware discovery** library: it can tell you what
-accelerators are present. The compute and cryptographic paths are not
-implemented.
+This is the current state of the code, not a roadmap. The "Refusal" column
+matters: an operation manzana cannot perform does not return a plausible value,
+and each one refuses in a specific, documented way.
 
-## What actually works
+### Implemented
 
-Every row is the current state, not a roadmap. "Not implemented" means the
-function returns `Error::Unimplemented` — it does not return a guess.
-
-| Capability | Module | Status |
+| What | API | How |
 |---|---|---|
-| Metal GPU enumeration (name, VRAM) | `metal` | **Implemented** — via `system_profiler` |
-| Metal device *limits* (`max_threads_per_threadgroup`, `registry_id`, `is_headless`) | `metal` | **Not queried** — hardcoded or synthesized; see the field docs |
-| Afterburner presence + stats | `afterburner` | **Implemented** — via IOKit |
-| Apple Silicon / ANE presence | `neural_engine` | **Implemented** — compile-time target check |
-| Page-aligned host buffer allocation | `unified_memory` | **Implemented** — real allocation, RAII |
-| Metal shader compilation, buffer allocation, dispatch | `metal` | **Not implemented** |
-| CoreML model loading and inference | `neural_engine` | **Not implemented** |
-| ANE capability querying (TOPS, cores) | `neural_engine` | **Not implemented** |
-| GPU-shared / zero-copy buffers | `unified_memory` | **Not implemented** |
+| Afterburner presence | `afterburner::is_available` | IOKit `IOServiceGetMatchingService` against the service classes `AppleProResAccelerator`, `AppleAfterburner`, `AFBAccelerator` |
+| Afterburner statistics | `AfterburnerMonitor::stats` | `IORegistryEntryCreateCFProperties`, reading the keys `StreamsActive`, `StreamsCapacity`, `Utilization`, `ThroughputFPS`, `Temperature`, `PowerWatts` |
+| Metal device enumeration | `MetalCompute::devices` | Parses `system_profiler SPDisplaysDataType`. Device **name** is read from that output |
+| Metal VRAM figure | `MetalDevice::max_buffer_length`, `vram_gb` | Parsed from a `VRAM` line **when `system_profiler` prints one**; otherwise a hardcoded default (see below) |
+| Neural Engine presence | `neural_engine::is_available` | A compile-time `cfg` check for `target_os = "macos"` **and** `target_arch = "aarch64"` — not a runtime probe. Sound as a presence claim because every Apple Silicon part ships an ANE |
+| Page-aligned host allocation | `unified_memory::UmaBuffer` | `std::alloc::alloc_zeroed` at 4096-byte alignment, freed by `Drop`. Works on every platform, macOS or not |
+| Tensor construction | `Tensor::new` | Validates `data.len() == prod(shape)` with a checked multiply, so an overflowing shape is rejected rather than wrapping |
 
-Notes on the implemented rows:
+Caveats on the Afterburner rows, because no host in the project's end-to-end
+matrix (`scripts/e2e_matrix.sh`: one Linux x86_64 host, one Apple M4) has the
+card:
 
-- `unified_memory::UmaBuffer` is a page-aligned **host** allocation. It is not
-  a `MTLBuffer`, is not wrapped with `newBufferWithBytesNoCopy:`, and is not
-  visible to a GPU. Page alignment is a prerequisite for that wrap, not the
-  wrap itself.
-- Metal enumeration shells out to `system_profiler`. If detection fails it
-  returns an empty list rather than inventing a device.
+- A registry key that is absent reads as `0` — and as `23` for
+  `streams_capacity` — which is indistinguishable from an idle card.
+- `AfterburnerStats::codec_breakdown` is always an empty map. Nothing populates
+  it.
 
-## Supported Hardware
+### Not implemented
 
-Detection only — see the table above for what can be done with each.
+| What | API | Refusal |
+|---|---|---|
+| Metal shader compilation | `MetalCompute::compile_shader` | `Error::Unimplemented` — "shader compilation (requires MTLDevice::newLibraryWithSource)" |
+| Metal buffer allocation | `MetalCompute::allocate_buffer` | `Error::Unimplemented` — "buffer allocation (requires MTLDevice::newBufferWithLength)" |
+| Metal compute dispatch | `MetalCompute::dispatch` | `Error::Unimplemented` — "compute dispatch (requires MTLCommandBuffer/MTLComputeCommandEncoder)" |
+| CoreML model loading | `NeuralEngineSession::load` | `Error::Unimplemented` — "CoreML model loading (requires MLModel compileModelAtURL)". A path whose extension is not `.mlmodel` or `.mlmodelc` gets `Error::InvalidInput` first |
+| CoreML inference | `NeuralEngineSession::infer` | `Error::Unimplemented` — "inference (requires CoreML MLModel prediction)" |
+| ANE capability query (TOPS, cores) | `NeuralEngineSession::capabilities` | Returns `None`, not an error |
+| GPU-visible (zero-copy) memory | `UmaBuffer::is_uma_available` | Returns `false`, not an error. No `MTLBuffer`, `IOSurface`, or Metal call exists anywhere in the crate |
+| Cryptography of any kind | — | Removed in 0.3.0 |
 
-| Accelerator | Module | Mac Pro | Apple Silicon | Intel Mac |
-|-------------|--------|---------|---------------|-----------|
-| Afterburner FPGA | `afterburner` | ✓ | - | - |
-| Neural Engine | `neural_engine` | - | ✓ | - |
-| Metal GPU | `metal` | ✓ | ✓ | ✓ |
-| Unified Memory | `unified_memory` | - | ✓ | - |
+Because `load` always fails, no `NeuralEngineSession` can be constructed
+through the public API, and `infer` and `model_path` are therefore unreachable
+from a caller.
+
+## Fields that are not measured
+
+Enumeration returns a `MetalDevice` whose fields look uniformly like device
+properties. Only some of them are. Nothing here is a query to the GPU: manzana
+makes no Metal and no IOKit call for Metal devices, and parses one
+`system_profiler` report.
+
+| Field | Where the value comes from | Measured? |
+|---|---|---|
+| `name` | The `system_profiler` output | Yes |
+| `index` | Position in the enumeration | Yes (it is a manzana-side index by definition) |
+| `max_buffer_length` / `vram_gb()` | A parsed `VRAM` line if present; otherwise a hardcoded 17_179_869_184 (16 GiB) when the device looks like Apple Silicon, or 4_294_967_296 (4 GiB) | Sometimes |
+| `registry_id` | Enumeration index + 1 | No — it is not an IOKit registry ID |
+| `max_threads_per_threadgroup` | Hardcoded `1024` | No — a published specification figure for current Apple GPUs, never read from the device |
+| `is_headless` | Hardcoded `false` | No — `system_profiler SPDisplaysDataType` does not report it |
+| `is_low_power` | `true` if the name contains `"Intel"` or `"Integrated"` | No — derived from the name string |
+| `has_unified_memory`, `is_apple_silicon()` | `true` if the name contains `"Apple"` **or** the build target is `aarch64` | No — derived from the name and the build target |
+
+On an Apple M4, `vram_gb()` reports exactly 16.0 GB, which is the Apple Silicon
+fallback constant. Treat that figure as a default unless you have confirmed
+that `system_profiler` printed a `VRAM` line on your machine.
+
+`MetalCompute::devices()` spawns `system_profiler` on every call, and
+`MetalCompute::is_available()` calls `devices()`. Cache the result if you are
+polling.
+
+## Unified memory: two different questions
+
+The examples print `UMA: Yes` in the Metal device panel on an M4 and, further
+down, report that manzana cannot give you unified memory. Both are correct,
+because they answer different questions:
+
+1. **Does the chip have a unified memory architecture?** On Apple Silicon, yes.
+   That is what `MetalDevice::has_unified_memory` reports — though note from the
+   table above that it is inferred from the device name and build target, not
+   queried.
+2. **Can manzana hand you a buffer both the CPU and the GPU can read?** No.
+   `UmaBuffer::is_uma_available()` returns `false` on every platform.
+
+`UmaBuffer` is a real page-aligned host allocation, and nothing more. It is not
+an `MTLBuffer`, it is not wrapped with `newBufferWithBytesNoCopy:`, and no GPU
+can read it. Page alignment is a *precondition* for such a wrap, not the wrap.
+The name is retained for API continuity and is itself misleading.
+
+The same distinction is why the crate exposes two top-level predicates:
+`is_acceleration_available()` reports hardware **presence** and is `true` on
+Apple Silicon; `is_acceleration_usable()` reports whether anything can actually
+be done through manzana, and is `true` only where Afterburner statistics are
+(unified memory being always `false`). On an M4 they disagree — presence
+without usability — which is the honest answer, not a bug.
+
+## Behavior by host
+
+| | macOS, Apple Silicon | macOS, Intel | Any non-macOS host |
+|---|---|---|---|
+| `is_macos()` | `true` | `true` | `false` |
+| `afterburner::is_available()` | IOKit service match | IOKit service match | `false` (no IOKit) |
+| `neural_engine::is_available()` | `true` | `false` | `false` |
+| `metal::is_available()` / `devices()` | Whatever `system_profiler` reports | Whatever `system_profiler` reports | `false` / empty |
+| `unified_memory::is_available()` | `false` | `false` | `false` |
+| `UmaBuffer::new(..)` | Works | Works | Works |
+
+Off macOS the crate compiles and every detection path reports absence; it never
+invents a device. If `system_profiler` cannot be run or its output yields no
+devices, `devices()` returns an empty vector rather than a placeholder GPU.
 
 ## Installation
+
+```toml
+[dependencies]
+manzana = "0.3"
+```
+
+The crate builds on any platform — it has no macOS-only build requirement — and
+reports absence everywhere but macOS. If you would rather it not appear in
+non-Apple builds at all:
 
 ```toml
 [target.'cfg(target_os = "macos")'.dependencies]
 manzana = "0.3"
 ```
 
-### Feature Flags
-
-```toml
-[features]
-default = []
-afterburner = []      # Mac Pro Afterburner support
-neural-engine = []    # Apple Silicon Neural Engine
-metal = []            # Metal GPU compute
-full = ["afterburner", "neural-engine", "metal"]
-```
-
-> **Note:** these flags are currently declared but gate nothing — no `#[cfg(feature = ...)]`
-> exists in `src/`, so every module is compiled regardless of which features you
-> enable. Wiring them up is tracked in the security architecture plan.
+MSRV is 1.75. Dependencies are `thiserror`, `tracing`,
+`provable-contracts-macros`, plus `core-foundation`, `core-foundation-sys`, and
+`mach2` on macOS targets. `bitflags` and `mach2` are declared in `Cargo.toml`
+but not referenced anywhere in `src/`.
 
 ## Usage
 
-### Hardware discovery
+### Discovery
 
 ```rust
 use manzana::{
@@ -147,34 +202,57 @@ use manzana::{
     neural_engine::NeuralEngineSession,
 };
 
-fn main() {
-    println!("Afterburner:   {}", AfterburnerMonitor::is_available());
-    println!("Neural Engine: {}", NeuralEngineSession::is_available());
-    println!("Metal GPU:     {}", MetalCompute::is_available());
+println!("Afterburner:   {}", AfterburnerMonitor::is_available());
+println!("Neural Engine: {}", NeuralEngineSession::is_available());
+println!("Metal GPU:     {}", MetalCompute::is_available());
 
-    for device in MetalCompute::devices() {
-        println!("GPU: {} ({:.1} GB VRAM)", device.name, device.vram_gb());
-    }
+// Empty on non-macOS hosts, and on macOS hosts where detection fails.
+for device in MetalCompute::devices() {
+    println!("GPU: {} ({:.1} GB)", device.name, device.vram_gb());
+}
+```
+
+### Afterburner statistics
+
+```rust
+use manzana::afterburner::AfterburnerMonitor;
+
+match AfterburnerMonitor::new() {
+    Some(monitor) => match monitor.stats() {
+        Ok(stats) => println!(
+            "{} / {} streams, {:.1}% utilization",
+            stats.streams_active, stats.streams_capacity, stats.utilization_percent,
+        ),
+        Err(e) => eprintln!("IOKit query failed: {e}"),
+    },
+    // Normal on any machine without the card, including every Apple Silicon Mac.
+    None => println!("no Afterburner"),
 }
 ```
 
 ### Page-aligned host buffers
 
+Works on every platform, including Linux:
+
 ```rust
 use manzana::unified_memory::UmaBuffer;
 
-fn buffers() -> manzana::Result<()> {
-    let mut buffer = UmaBuffer::new(1024 * 1024)?;
-    buffer.as_mut_slice()[0] = 42;
-    assert!(buffer.is_aligned());
-    Ok(())
-}
+let mut buffer = UmaBuffer::new(1024 * 1024)?;
+assert!(buffer.is_aligned());
+assert_eq!(buffer.len(), 1024 * 1024);
+
+buffer.as_mut_slice()[0] = 42;
+assert_eq!(buffer.as_slice()[0], 42);
+
+// Rounded up to a 4096-byte boundary; the reported length stays what you asked for.
+assert!(buffer.allocated_size() >= buffer.len());
+# Ok::<(), manzana::Error>(())
 ```
 
-### Handling unimplemented operations
+### What a refusal looks like
 
-Operations that cannot reach real hardware fail rather than guess. Callers can
-detect this specifically:
+Callers can distinguish "manzana has not implemented this" from every other
+failure with `Error::is_unimplemented`:
 
 ```rust
 use manzana::neural_engine::NeuralEngineSession;
@@ -182,94 +260,259 @@ use std::path::Path;
 
 let err = NeuralEngineSession::load(Path::new("model.mlmodelc"))
     .expect_err("CoreML model loading is not implemented");
+
 assert!(err.is_unimplemented());
+// Not the same as "the hardware is missing" — the ANE may well be there.
+assert!(!err.is_not_available());
+assert_eq!(
+    err.to_string(),
+    "operation not implemented: CoreML model loading \
+     (requires MLModel compileModelAtURL) (Neural Engine)",
+);
+
+// A caller mistake is reported as a caller mistake, not as a missing backend.
+let err = NeuralEngineSession::load(Path::new("model.txt")).unwrap_err();
+assert!(!err.is_unimplemented());
+assert!(err.to_string().starts_with("invalid input:"));
 ```
 
-## Examples
+## Example output
+
+Captured by running the examples, not written by hand. Regenerate with:
 
 ```bash
-cargo run --example hardware_discovery   # Discover available Apple hardware
-cargo run --example metal_compute        # Enumerate Metal devices
+cargo run --example hardware_discovery
+cargo run --example metal_compute
 ```
 
-## Safety Architecture
+### Linux x86_64 — a MacPro7,1 with an Afterburner card fitted
 
-The public API is safe Rust. `#![deny(unsafe_code)]` is set at the crate root,
-with overrides in two places:
+The card is physically installed (`lspci` shows Apple `106b:0205` at `0f:00.0`)
+and manzana still cannot read it, because it reads the card through IOKit and
+this host runs Linux. The panel says so, rather than claiming no card:
 
+```text
+┌─────────────────────────────────────────────────────────────┐
+│ Afterburner FPGA (Mac Pro 2019+)                            │
+├─────────────────────────────────────────────────────────────┤
+│ Cannot look: manzana reads the card through IOKit, which    │
+│ exists only on macOS. A fitted card is unreadable here.     │
+│                                                             │
+│ Implemented: presence and statistics, read from IOKit.      │
+└─
 ```
-src/ffi/iokit.rs        Real FFI. extern "C" bindings to IOServiceMatching,
-                        IORegistryEntryCreateCFProperties and friends, each
-                        unsafe block carrying a // SAFETY: justification.
-                        This is what backs Afterburner detection and stats.
-src/unified_memory.rs   Carries its own #![allow(unsafe_code)] for the
-                        page-aligned allocation and its RAII Drop.
+
+`cargo run --example metal_compute` here prints:
+
+```text
+╔════════════════════════════════════════════════════════════╗
+║          MANZANA - Metal GPU Compute Demo                  ║
+╚════════════════════════════════════════════════════════════╝
+
+Metal not available on this system.
+Enumeration runs `system_profiler SPDisplaysDataType`, which
+reported no GPU here. Requires macOS with a Metal-capable GPU.
 ```
 
-Unsafe code is therefore **not** confined to `src/ffi/`, contrary to earlier
-versions of this document. Earlier versions also described the FFI layer as
-"MIRI-verified"; the `make miri` target behind that claim suppressed its own
-failures and could not fail. Both the target and the claim have been corrected.
+### Apple M4, macOS 26.5.2
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│ Metal GPU                                                   │
+├─────────────────────────────────────────────────────────────┤
+│ Present: yes (1 device(s) enumerated)                       │
+│                                                             │
+│ GPU 0: Apple M4                                             │
+│   VRAM: 16.0 GB (from system_profiler)                      │
+│   Unified memory: yes (inferred from the name)              │
+│   registry_id, thread limits and headless flag are          │
+│   synthesized or hardcoded; see the MetalDevice docs.       │
+│                                                             │
+│ Implemented: enumeration (name, VRAM). Shader compilation,  │
+│ buffer allocation and dispatch are not - see the            │
+│ metal_compute example for their refusals.                   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+The Neural Engine panel prints no TOPS or core count, because `capabilities()`
+returns `None` rather than a datasheet figure. `metal_compute` enumerates the
+device and then refuses every compute operation:
+
+```text
+Compute pipeline:
+  default_device  -> Apple M4
+  compile_shader  -> operation not implemented: shader compilation (requires MTLDevice::newLibraryWithSource) (Metal GPU)
+  allocate_buffer -> operation not implemented: buffer allocation (requires MTLDevice::newBufferWithLength) (Metal GPU)
+  dispatch        -> cannot be attempted: it takes a CompiledShader
+                     and MetalBuffers, and neither can be obtained.
+                     Called directly it returns the same refusal.
+
+Enumeration above is real, parsed from `system_profiler`.
+Shader compilation, buffer allocation and dispatch are not
+implemented: they return Error::Unimplemented on every platform,
+for every argument, rather than a value that resembles a result.
+See docs/specifications/security-architecture-plan.md
+```
+
+## Errors
+
+Every fallible function returns `Result<T, manzana::Error>`. These are the
+variants this crate actually produces:
+
+| Variant | Produced by |
+|---|---|
+| `Unimplemented` | The five operations in [Not implemented](#not-implemented) |
+| `InvalidInput` | `Tensor::new` (length/shape mismatch, or a shape whose product overflows `usize`); `UmaBuffer::new` (zero length, over the 16 GiB maximum, or a length that overflows when page-aligned); `UmaBuffer::copy_from_slice` (source longer than the buffer); `NeuralEngineSession::load` (extension other than `.mlmodel`/`.mlmodelc`) |
+| `NotFound` | `MetalCompute::new` with a device index past the end of `devices()` |
+| `NotAvailable` | `MetalCompute::default_device` when no Metal device was enumerated |
+| `IoKit` | `AfterburnerMonitor::stats` when `IORegistryEntryCreateCFProperties` returns a non-`KERN_SUCCESS` code or a null dictionary. The `kern_return_t` is preserved and readable via `Error::error_code()` |
+| `Internal` | `UmaBuffer::new` when the layout is rejected or the allocator returns null |
+
+`Error::Metal`, `Error::CoreMl`, `Error::Security`, `Error::Timeout`, and
+`Error::PermissionDenied` exist with public constructors, but nothing in `src/`
+constructs them. Do not write a match arm expecting one.
+
+The predicates `is_unimplemented()`, `is_not_available()`, `is_timeout()`,
+`is_permission_denied()`, and `error_code()` support branching without string
+matching.
+
+## Feature flags
+
+```toml
+default = []
+afterburner   = []
+neural-engine = []
+metal         = []
+full = ["afterburner", "neural-engine", "metal"]
+```
+
+**These flags gate nothing.** There is no `#[cfg(feature = ...)]` anywhere in
+`src/`, so every module compiles regardless of what you enable. Enabling `full`
+changes nothing about the resulting binary. The `secure-enclave` flag was
+removed in 0.3.0 along with the module it named.
+
+## Safety architecture
+
+The public API is safe Rust. `#![deny(unsafe_code)]` is set at the crate root —
+`deny` rather than `forbid` because two files override it:
+
+- **`src/ffi/iokit.rs`** — real FFI. `extern "C"` declarations for
+  `IOServiceMatching`, `IOServiceGetMatchingService`, `IOObjectRelease`,
+  `IORegistryEntryCreateCFProperties`, and `IORegistryEntryGetName`, linked
+  against the IOKit framework, each `unsafe` block carrying a `// SAFETY:`
+  justification. This backs Afterburner detection and statistics. It is
+  compiled only on macOS; `src/ffi/mod.rs` supplies a non-macOS module that
+  reports absence.
+- **`src/unified_memory/mod.rs`** — the page-aligned allocation and its RAII
+  `Drop`.
+
+Unsafe code is therefore not confined to `src/ffi/`. The `ffi` module is
+private and no raw pointer from it escapes into the public API.
+
+`UmaBuffer` uses `alloc_zeroed` rather than `alloc` deliberately: `as_slice`
+and `as_mut_slice` are safe public methods, so a caller could build a reference
+over uninitialized memory from entirely safe code. Zeroing on allocation makes
+the buffer initialized before any reference to it can exist.
 
 ## Quality
 
 | Metric | Value |
-|--------|-------|
-| Tests | 154 on Linux, 163 on macOS arm64 (measured per host by `scripts/e2e_matrix.sh`) |
-| Clippy | 0 warnings (pedantic + nursery, `--all-targets`) |
-| Unsafe code | `src/ffi/iokit.rs` (real IOKit FFI) and `src/unified_memory.rs` |
+|---|---|
+| Tests | 201 on Linux, 208 on macOS arm64, plus 60 doctests on each. 0 ignored on both |
+| Line coverage | 95.82%, against a 95% floor enforced by `make coverage-gate` |
+| Clippy | 0 warnings with `pedantic` + `nursery` on `--all-targets --all-features` |
+| Unsafe code | `src/ffi/iokit.rs`, `src/unified_memory/mod.rs` |
 
-Test counts are platform-dependent because some tests are gated on
-`target_os`. The security-critical assertions are deliberately **ungated** —
-gating the entire cryptographic surface behind `target_os = "macos"` is what
-allowed the stubbed implementations to ship with a green Linux CI lane.
+The counts differ by platform because some tests are gated on `target_os`.
+That gap is what `scripts/check_test_census.sh` exists to police, and it is not
+a count threshold: it asserts that nothing is ignored, that no module in
+`{neural_engine, metal, unified_memory, error, afterburner}` has an empty test
+denominator, that the total ratchets monotonically against a committed
+baseline, and that any test removed from the name set is named rather than
+absorbed by an added one. A `#[cfg(target_os)]`-gated test does not report as
+`ignored` on the host that lacks it — it simply does not exist — and a green
+lane over zero tests is how the fabricated implementations shipped.
 
-## Part of the Sovereign AI Stack
+`make tier2` runs formatting, lint, tests, the coverage gate, the security
+audit, and contract validation.
 
-Manzana is part of the Sovereign AI stack orchestrated by
-[aprender](https://github.com/paiml/aprender). Orchestration formerly lived in
-the separate `batuta` repository, which has been archived and merged into the
-aprender monorepo as `crates/aprender-orchestrate`.
+## The 0.1.0 / 0.2.0 incident
+
+Recorded here because a stranger evaluating this crate should not have to find
+it in a changelog. Full detail in [CHANGELOG.md](CHANGELOG.md); the entries
+below are that record, not observations of the current tree, since the code
+they describe is deleted.
+
+Both versions are yanked. The `secure_enclave` module documented hardware-backed
+P-256 ECDSA signing in `///` rustdoc that sat directly above `//` comments
+admitting the implementation was a stub:
+
+- `create()` returned a fixed public key, varying only in one byte set to a
+  byte-sum of the key tag. No key was generated.
+- `sign()` returned a DER-shaped value whose `r` was 32 copies of a byte-sum of
+  the message and whose `s` was 32 copies of a byte-sum of the tag — roughly 8
+  bits of entropy per half, derivable by anyone.
+- `verify()` re-derived that same value and compared bytes, so it accepted
+  forgeries from anyone who knew the tag.
+- `delete()` returned `Ok(())` without deleting anything.
+- `is_available()` returned `true` unconditionally on macOS, including x86_64
+  Macs with no Secure Enclave. The advisory records the affected platform as
+  `aarch64`; the defect was broader.
+
+The same pattern existed outside the module named in the advisory:
+`neural_engine::infer()` returned a correctly-shaped all-zero tensor silently;
+`capabilities()` returned the M1 baseline (15.8 TOPS, 16 cores) on every chip;
+`load()` reported success after inspecting only a filename;
+`metal::dispatch()` returned `Ok(())` having dispatched nothing;
+`metal::compile_shader()` "compiled" by hashing the source string.
+
+**0.3.0 deletes `secure_enclave` rather than repairing it.** Wrapping
+`security-framework` would have added no capability while permanently attaching
+this advisory to the crate. The remaining fabricating operations now return
+`Error::Unimplemented`. What survives of the old shape is documented above under
+[Fields that are not measured](#fields-that-are-not-measured) — synthesized
+*fields*, labeled as such, rather than fabricated *results*.
+
+Tracked as [RUSTSEC-2026-0273][adv] (`crypto-failure`), reported in
+[issue #3](https://github.com/paiml/manzana/issues/3) by
+[@ZephyrCodesStuff](https://github.com/ZephyrCodesStuff) and corroborated by
+[@djc](https://github.com/djc). Both were right, and the crate is better for it.
+Remediation plan:
+[`docs/specifications/security-architecture-plan.md`](docs/specifications/security-architecture-plan.md).
 
 ## Contributing
 
-Contributions are welcome. Please open an issue or pull request on
+Contributions are welcome — open an issue or pull request on
 [GitHub](https://github.com/paiml/manzana).
 
-1. Fork the repository
-2. Create your feature branch
-3. Run `make tier2` to validate
-4. Submit a pull request
+1. Fork the repository and create a branch.
+2. Run `make tier2` to validate.
+3. Submit a pull request.
 
 **A function must never return a fabricated value.** If an operation cannot
 reach the hardware it claims to use, it returns `Error::Unimplemented`. A
 plausible-looking placeholder is worse than an error, because a caller cannot
-tell it apart from a real result.
+tell it apart from a real result. The same rule governs documentation: a doc
+comment is a claim, and a claim nobody checked is how 0.1.0 shipped.
 
 ## Security
 
 To report a security issue, open an issue on
 [GitHub](https://github.com/paiml/manzana/issues) or contact the maintainers.
 
-### Acknowledgements
-
-The stubbed-cryptography defect was reported by
-[@ZephyrCodesStuff](https://github.com/ZephyrCodesStuff) in
-[issue #3](https://github.com/paiml/manzana/issues/3), and corroborated by
-[@djc](https://github.com/djc). Both were right, and the crate is better for
-it. RUSTSEC-2026-0273 was filed on the strength of that report.
-
-See [CHANGELOG.md](CHANGELOG.md) for the full record of what was wrong and
-what changed.
+Manzana is part of the Sovereign AI stack alongside
+[aprender](https://github.com/paiml/aprender).
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+MIT — see [LICENSE](LICENSE).
 
 ## References
 
 - [Apple Afterburner](https://support.apple.com/en-us/HT210918)
 - [Apple Neural Engine](https://machinelearning.apple.com/research/neural-engine-transformers)
 - [Metal Framework](https://developer.apple.com/metal/)
-- [Secure Enclave](https://support.apple.com/guide/security/secure-enclave-sec59b0b31ff/web)
-- [`security-framework` crate](https://crates.io/crates/security-framework) — for real Secure Enclave access
+- [`security-framework`][sf] — for real Secure Enclave and Keychain access
+
+[adv]: https://rustsec.org/advisories/RUSTSEC-2026-0273.html
+[sf]: https://crates.io/crates/security-framework

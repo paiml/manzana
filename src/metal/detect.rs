@@ -4,6 +4,14 @@
 //! text parsing of a shell-out, with its own failure mode (report nothing
 //! rather than invent a device).
 
+// cfg-gated to match the functions below. Every item in this file is macOS-only,
+// so on other targets this import is genuinely unused -- and `cargo fix` removed
+// it for exactly that reason, breaking the macOS build while the Linux build
+// stayed green. That is the single-platform-lane defect this release exists to
+// remove, reintroduced by a tool run on one platform.
+#[cfg(target_os = "macos")]
+use super::MetalDevice;
+
 #[cfg(target_os = "macos")]
 pub(super) fn detect_gpus_via_system_profiler() -> Vec<MetalDevice> {
     use std::process::Command;
@@ -13,7 +21,7 @@ pub(super) fn detect_gpus_via_system_profiler() -> Vec<MetalDevice> {
         .output()
     {
         Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).to_string(),
-        _ => return Self::fallback_device(),
+        _ => return fallback_device(),
     };
 
     let mut devices = Vec::new();
@@ -37,7 +45,7 @@ pub(super) fn detect_gpus_via_system_profiler() -> Vec<MetalDevice> {
         {
             // Save previous GPU if we have one
             if !current_name.is_empty() {
-                devices.push(Self::create_device(&current_name, current_vram, index));
+                devices.push(create_device(&current_name, current_vram, index));
                 index += 1;
             }
             current_name = line.trim_end_matches(':').to_string();
@@ -63,11 +71,11 @@ pub(super) fn detect_gpus_via_system_profiler() -> Vec<MetalDevice> {
 
     // Don't forget the last GPU
     if !current_name.is_empty() {
-        devices.push(Self::create_device(&current_name, current_vram, index));
+        devices.push(create_device(&current_name, current_vram, index));
     }
 
     if devices.is_empty() {
-        Self::fallback_device()
+        fallback_device()
     } else {
         devices
     }
