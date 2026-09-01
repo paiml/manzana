@@ -1,0 +1,16 @@
+# Parses fine, but [hardware_modules].paths is empty -- the denominator is
+# zero, which is the missing-denominator defect (F8) the gate exists to catch.
+[charter]
+version = 1
+
+[hardware_modules]
+paths = []
+
+[hardware_modules.allowlist]
+crates = ["security_framework"]
+constructs = ['extern "C"']
+host_calls = ["Command::new"]
+
+[hardware_modules.refusal]
+symbols = ["Error::unimplemented"]
+error_variant = "Unimplemented"

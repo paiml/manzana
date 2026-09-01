@@ -31,7 +31,7 @@ test-unit:
 # =============================================================================
 # TIER 2: ON-COMMIT (1-5 minutes)
 # =============================================================================
-tier2: fmt-check lint test coverage-check audit deny
+tier2: fmt-check lint test coverage-check audit deny quorum
 	@echo "✅ Tier 2 passed (on-commit validation)"
 
 fmt-check:
@@ -56,6 +56,19 @@ coverage-check:
 	@echo "📊 Checking coverage (target: 95%)..."
 	@command -v cargo-llvm-cov >/dev/null 2>&1 || { echo "Installing cargo-llvm-cov..."; cargo install cargo-llvm-cov; }
 	cargo llvm-cov --lib --fail-under 90
+
+quorum:
+	@echo "🔍 Hardware-reachability gate (MZNQ-4)..."
+	./scripts/check_hardware_reachability.sh
+	@echo "🧬 Gate mutation set (MZNQ-003, target 100%)..."
+	./scripts/mutate_reachability_gate.sh
+	@if command -v bats >/dev/null 2>&1; then \
+		echo "🧪 Quorum fixtures..."; bats tests/quorum.bats; \
+	else \
+		echo "❌ bats not installed; the fixture suite cannot be reported as passing."; \
+		echo "   Install: https://github.com/bats-core/bats-core"; \
+		exit 1; \
+	fi
 
 audit:
 	@echo "🔒 Running security audit..."

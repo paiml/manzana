@@ -38,6 +38,44 @@ GATE="scripts/check_hardware_reachability.sh"
   [ "$status" -eq 0 ]
 }
 
+@test "fixture 2: a capability asserted as a constant is RED" {
+  run env FIXTURE_DIR=tests/fixtures/quorum/red_capability_lie bash "$GATE"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"capability"* ]]
+}
+
+@test "degenerate: .rs with no functions is refused with its own diagnostic" {
+  run env FIXTURE_DIR=tests/fixtures/quorum/degenerate_no_functions bash "$GATE"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"extracted 0 functions"* ]]
+}
+
+@test "degenerate: no PUBLIC functions is refused with its own diagnostic" {
+  run env FIXTURE_DIR=tests/fixtures/quorum/degenerate_only_private bash "$GATE"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"examined 0 functions"* ]]
+}
+
+@test "degenerate: an empty denominator is refused with its own diagnostic" {
+  run env CHARTER=tests/fixtures/quorum/empty-denominator-charter.toml bash "$GATE"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"denominator is empty"* ]]
+}
+
+@test "MZNQ-007: an unmapped module is RED (the denominator is gated)" {
+  printf '//! transient probe\npub const fn probe() -> bool { false }\n' > src/zz_bats_probe.rs
+  run bash "$GATE"
+  rm -f src/zz_bats_probe.rs
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"UNMAPPED"* ]]
+}
+
+@test "MZNQ-003: the gate scores 100% against its mutation set" {
+  run bash scripts/mutate_reachability_gate.sh
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"100% kill"* ]]
+}
+
 @test "gate emits a machine-readable receipt" {
   out="$(mktemp)"
   run env JSON_OUT="$out" bash "$GATE"

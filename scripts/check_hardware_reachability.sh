@@ -78,6 +78,33 @@ if [ -n "$FIXTURE_DIR" ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Charter-mapping check (MZNQ-007).
+#
+# The charter is H1's DENOMINATOR. A module absent from it is invisible to this
+# gate, so an unmapped module is a silent hole -- and a denominator nobody
+# gates is exactly the missing-denominator defect (F8) the gate exists to stop.
+# Skipped in fixture mode, where the module set is deliberately synthetic.
+# ---------------------------------------------------------------------------
+if [ -z "$FIXTURE_DIR" ]; then
+  mapfile -t SUPPORT_PATHS < <(read_array "support_modules" "paths")
+  unmapped=0
+  while IFS= read -r rs; do
+    mapped=0
+    for m in "${HW_PATHS[@]}" "${SUPPORT_PATHS[@]}"; do
+      [ "$rs" = "$m" ] && { mapped=1; break; }
+    done
+    if [ "$mapped" -eq 0 ]; then
+      printf '\033[0;31mUNMAPPED\033[0m %s is in neither [hardware_modules] nor [support_modules]\n' "$rs" >&2
+      unmapped=$((unmapped + 1))
+    fi
+  done < <(find src -name '*.rs' -not -name 'tests.rs' | sort)
+  if [ "$unmapped" -ne 0 ]; then
+    printf '\n%d module(s) unmapped in %s -- the denominator is not honest (F8)\n' "$unmapped" "$CHARTER" >&2
+    exit 1
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 # Per-function verdicts.
 #
 # Three admissible limbs:
