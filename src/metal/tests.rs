@@ -1,0 +1,191 @@
+//! Tests for the `metal` module.
+
+#![allow(clippy::unwrap_used)]
+#![allow(clippy::expect_used)]
+
+use super::*;
+
+#[test]
+fn test_devices_no_panic() {
+    let devices = MetalCompute::devices();
+    // On macOS: at least one device
+    // On other platforms: empty
+    #[cfg(target_os = "macos")]
+    assert!(
+        !devices.is_empty(),
+        "Should have at least one Metal device on macOS"
+    );
+    #[cfg(not(target_os = "macos"))]
+    assert!(
+        devices.is_empty(),
+        "Should have no Metal devices on non-macOS"
+    );
+}
+
+#[test]
+fn test_is_available_consistent() {
+    let available = MetalCompute::is_available();
+    let devices = MetalCompute::devices();
+    assert_eq!(available, !devices.is_empty());
+}
+
+#[test]
+fn test_device_properties() {
+    let devices = MetalCompute::devices();
+    for device in &devices {
+        assert!(!device.name.is_empty());
+        assert!(device.max_threads_per_threadgroup > 0);
+        assert!(device.max_buffer_length > 0);
+        assert!(device.vram_gb() > 0.0);
+    }
+}
+
+#[test]
+fn test_new_invalid_index() {
+    let result = MetalCompute::new(999);
+    assert!(result.is_err());
+}
+
+// On macOS these now fail if `system_profiler` reports no GPU. That used
+// to be masked by a fabricated fallback device; a Mac where GPU detection
+// genuinely does not work is a real finding and should be visible.
+// Detection is consistent with enumeration, on every platform. Asserting
+// "a device exists" would break a GPU-less macOS CI runner now that
+// fallback_device() no longer fabricates one; asserting the *relationship*
+// holds everywhere and still fails if detection and construction disagree.
+#[test]
+fn test_device_construction_agrees_with_enumeration() {
+    let n = MetalCompute::devices().len();
+    assert_eq!(
+        MetalCompute::new(0).is_ok(),
+        n > 0,
+        "new(0) must succeed exactly when enumeration reports devices (n={n})"
+    );
+    assert_eq!(MetalCompute::default_device().is_ok(), n > 0);
+    // Out-of-range index must always fail.
+    assert!(MetalCompute::new(n + 1).is_err());
+}
+
+// The compute path must refuse rather than silently drop work.
+//
+// These are ungated: the refusal is platform-independent, so they run in
+// the Linux CI lane too. Previously every compute assertion was behind
+// `cfg(target_os = "macos")`, leaving nothing to fail by default.
+// These previously began `let Ok(compute) = ... else { return; }`, so on a
+// machine with no Metal device -- every Linux CI runner -- they returned
+// early and passed without asserting anything. That is a silent pass: the
+// exact defect class this release exists to remove, reintroduced by the
+// fix. `MetalCompute` is constructed directly so the refusal is asserted
+// on every platform.
+fn any_compute() -> MetalCompute {
+    MetalCompute::default_device().unwrap_or_else(|_| MetalCompute {
+        device_index: 0,
+        device_name: String::from("test-harness (no device required)"),
+        _not_send_sync: std::marker::PhantomData,
+    })
+}
+
+#[test]
+fn test_compile_shader_is_unimplemented() {
+    let err = any_compute()
+        .compile_shader("kernel void add() {}", "add")
+        .expect_err("shader compilation must not report success");
+    assert!(err.is_unimplemented(), "got {err:?}");
+}
+
+#[test]
+fn test_allocate_buffer_is_unimplemented() {
+    // The removed version returned a MetalBuffer holding only a length,
+    // so this call "succeeded" while allocating nothing at all.
+    let err = any_compute()
+        .allocate_buffer(1024)
+        .expect_err("buffer allocation must not report success");
+    assert!(err.is_unimplemented(), "got {err:?}");
+}
+
+#[test]
+fn test_dispatch_is_unimplemented() {
+    let err = any_compute()
+        .dispatch(
+            &CompiledShader {
+                name: String::from("k"),
+                source_hash: 0,
+            },
+            &[],
+            (1, 1, 1),
+            (1, 1, 1),
+        )
+        .expect_err("dispatch must not silently drop work");
+    assert!(err.is_unimplemented(), "got {err:?}");
+}
+
+#[test]
+fn test_no_fabricated_device_when_detection_fails() {
+    // fallback_device() must return no devices rather than inventing an
+    // "Apple GPU". On non-macOS there is no Metal, so the list is empty.
+    #[cfg(not(target_os = "macos"))]
+    {
+        assert!(
+            MetalCompute::devices().is_empty(),
+            "must not fabricate a Metal device on a platform without Metal"
+        );
+        assert!(MetalCompute::default_device().is_err());
+    }
+}
+
+#[test]
+fn test_convenience_function() {
+    assert_eq!(is_available(), MetalCompute::is_available());
+}
+
+#[test]
+#[cfg(target_os = "macos")]
+fn test_detect_real_gpus() {
+    // Device enumeration via system_profiler is one of the few genuinely
+    // implemented paths in this module. If it returns nothing, that is a
+    // real detection failure and must be visible, not papered over with a
+    // fabricated fallback device.
+    let devices = MetalCompute::devices();
+    assert!(!devices.is_empty(), "Should detect at least one GPU");
+
+    // Device name should be real, not stub
+    let first = &devices[0];
+    assert!(
+        !first.name.contains("Intel UHD"),
+        "Should detect real GPU, not stub. Got: {}",
+        first.name
+    );
+}
+
+#[test]
+#[cfg(target_os = "macos")]
+fn test_detect_gpu_vram() {
+    let devices = MetalCompute::devices();
+    if !devices.is_empty() {
+        // Real GPUs should report VRAM
+        let first = &devices[0];
+        // Mac Pro AMD GPUs have 16GB, Apple Silicon has unified memory
+        assert!(
+            first.vram_gb() >= 1.0,
+            "GPU should report at least 1GB VRAM, got: {} GB",
+            first.vram_gb()
+        );
+    }
+}
+
+#[test]
+fn test_metal_buffer_methods() {
+    let buffer = MetalBuffer {
+        length: 1024,
+        device_index: 0,
+    };
+    assert_eq!(buffer.len(), 1024);
+    assert!(!buffer.is_empty());
+    assert_eq!(buffer.device_index(), 0);
+
+    let empty_buffer = MetalBuffer {
+        length: 0,
+        device_index: 0,
+    };
+    assert!(empty_buffer.is_empty());
+}

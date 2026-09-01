@@ -120,9 +120,12 @@ pub const fn is_macos() -> bool {
     cfg!(target_os = "macos")
 }
 
-/// Check if any Apple hardware acceleration is available.
+/// Check whether any Apple acceleration **hardware is present**.
 ///
-/// Returns `true` if at least one hardware subsystem is accessible.
+/// Presence is not usability. On Apple Silicon this returns `true` because the
+/// Neural Engine and Metal GPU are detected, yet every operation on them
+/// returns [`Error::Unimplemented`] — so a caller branching on this is told it
+/// has acceleration it cannot actually reach. See [`is_acceleration_usable`].
 #[must_use]
 pub fn is_acceleration_available() -> bool {
     afterburner::is_available()
@@ -130,6 +133,22 @@ pub fn is_acceleration_available() -> bool {
         || metal::is_available()
         || secure_enclave::is_available()
         || unified_memory::is_available()
+}
+
+/// Whether any accelerator can actually be *used* through manzana.
+///
+/// [`is_acceleration_available`] reports hardware **presence**. That is a
+/// different question, and on Apple Silicon the two disagree: the Neural
+/// Engine and Metal GPU are detected, but every operation on them returns
+/// [`Error::Unimplemented`], so a caller branching on presence is told it has
+/// acceleration it cannot reach.
+///
+/// This reports the question a caller usually means. Only Afterburner
+/// statistics and host buffer allocation are implemented today, so it is
+/// `true` only where those are.
+#[must_use]
+pub fn is_acceleration_usable() -> bool {
+    afterburner::is_available() || unified_memory::is_available()
 }
 
 #[cfg(test)]

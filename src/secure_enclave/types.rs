@@ -75,6 +75,14 @@ fn parse_der_ecdsa_sig(b: &[u8]) -> Result<(usize, usize)> {
         if v.len() > 33 {
             return Err(bad(&format!("{name} exceeds 32 bytes for P-256")));
         }
+        // 33 bytes is legal only as a 0x00 pad in front of a 32-byte value
+        // whose high bit is set. Any other 33-byte encoding is a scalar
+        // >= 2^256, outside the P-256 field.
+        if v.len() == 33 && v[0] != 0x00 {
+            return Err(bad(&format!(
+                "{name} is 33 bytes without a leading zero pad, so it exceeds 2^256"
+            )));
+        }
     }
     Ok((r_len, s_len))
 }

@@ -1,12 +1,13 @@
 //! Metal GPU Compute Example
 //!
-//! Demonstrates Metal GPU device enumeration and compute setup.
+//! Demonstrates Metal GPU device enumeration, which is implemented, and
+//! reports the compute operations that are not.
 //!
 //! Run with: cargo run --example `metal_compute`
 
 use manzana::metal::MetalCompute;
 
-fn main() -> Result<(), manzana::Error> {
+fn main() {
     println!("╔════════════════════════════════════════════════════════════╗");
     println!("║          MANZANA - Metal GPU Compute Demo                  ║");
     println!("╚════════════════════════════════════════════════════════════╝");
@@ -16,7 +17,7 @@ fn main() -> Result<(), manzana::Error> {
     if !MetalCompute::is_available() {
         println!("❌ Metal not available on this system.");
         println!("   Requires: macOS with Metal-capable GPU");
-        return Ok(());
+        return;
     }
 
     // Enumerate all Metal devices
@@ -59,65 +60,31 @@ fn main() -> Result<(), manzana::Error> {
         println!();
     }
 
-    // Create compute pipeline on default device
-    println!("Creating compute pipeline on default device...");
-    let compute = MetalCompute::default_device()?;
-    println!("✓ Pipeline created on: {}", compute.device_name());
-    println!();
-
-    // Compile a simple shader
-    println!("Compiling shader...");
-    let shader_source = r"
-        kernel void vector_add(
-            device float* a [[buffer(0)]],
-            device float* b [[buffer(1)]],
-            device float* result [[buffer(2)]],
-            uint id [[thread_position_in_grid]]
-        ) {
-            result[id] = a[id] + b[id];
+    // Everything past enumeration is unimplemented. Report that instead of
+    // aborting the demo halfway through a `?`, which is what happened when
+    // these calls were changed to return Error::Unimplemented.
+    println!("Compute pipeline:");
+    match MetalCompute::default_device() {
+        Ok(compute) => {
+            println!("  device        -> {}", compute.device_name());
+            match compute.compile_shader("kernel void vector_add() {}", "vector_add") {
+                Ok(_) => println!(
+                    "  compile_shader-> unexpectedly succeeded; verify the backend is real"
+                ),
+                Err(e) => println!("  compile_shader-> {e}"),
+            }
+            match compute.allocate_buffer(1024) {
+                Ok(_) => println!(
+                    "  allocate_buffer-> unexpectedly succeeded; verify the backend is real"
+                ),
+                Err(e) => println!("  allocate_buffer-> {e}"),
+            }
         }
-    ";
-
-    let shader = compute.compile_shader(shader_source, "vector_add")?;
-    println!("✓ Shader compiled: {}", shader.name());
+        Err(e) => println!("  no default device: {e}"),
+    }
     println!();
-
-    // Allocate buffers
-    println!("Allocating GPU buffers...");
-    let buffer_size = 1024 * 1024; // 1MB
-    let buffer_a = compute.allocate_buffer(buffer_size)?;
-    let buffer_b = compute.allocate_buffer(buffer_size)?;
-    let buffer_result = compute.allocate_buffer(buffer_size)?;
-
-    println!(
-        "✓ Allocated 3 buffers × {} KB = {} KB total",
-        buffer_size / 1024,
-        (buffer_size * 3) / 1024
-    );
-    println!();
-
-    // Dispatch compute (stub - would execute on real Metal)
-    println!("Dispatching compute kernel...");
-    let elements = buffer_size / 4; // float = 4 bytes
-    let threadgroup_size = 256;
-    #[allow(clippy::cast_possible_truncation)]
-    let grid_size = (elements / threadgroup_size) as u32;
-    #[allow(clippy::cast_possible_truncation)]
-    let threadgroup_size_u32 = threadgroup_size as u32;
-
-    compute.dispatch(
-        &shader,
-        &[&buffer_a, &buffer_b, &buffer_result],
-        (grid_size, 1, 1),
-        (threadgroup_size_u32, 1, 1),
-    )?;
-
-    println!("✓ Dispatched {elements} threads in {grid_size} threadgroups");
-    println!();
-
-    println!("╔════════════════════════════════════════════════════════════╗");
-    println!("║                    Demo Complete                           ║");
-    println!("╚════════════════════════════════════════════════════════════╝");
-
-    Ok(())
+    println!("Device enumeration is implemented and real, via `system_profiler`.");
+    println!("Shader compilation, buffer allocation and dispatch are not");
+    println!("implemented and return Error::Unimplemented rather than pretending.");
+    println!("See docs/specifications/security-architecture-plan.md");
 }

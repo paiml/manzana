@@ -47,18 +47,32 @@ use std::ptr::NonNull;
 /// Page size for Metal buffer alignment (4096 bytes).
 pub const PAGE_SIZE: usize = 4096;
 
-/// Maximum allocation size (16 GB).
-pub const MAX_ALLOCATION: usize = 17_179_869_184;
-
-/// A unified memory buffer shared between CPU and GPU.
+/// Maximum allocation size: 16 GB, or `usize::MAX` on targets too small to
+/// express it.
 ///
-/// On Apple Silicon, this buffer uses unified memory architecture,
-/// meaning both CPU and GPU can access it without data copies.
+/// The literal `17_179_869_184` does not fit a 32-bit `usize` and made the
+/// crate fail to compile on 32-bit targets outright.
+pub const MAX_ALLOCATION: usize = if usize::BITS >= 64 {
+    17_179_869_184
+} else {
+    usize::MAX
+};
+
+/// A page-aligned host buffer.
+///
+/// **Not GPU-visible.** This is a `std::alloc::alloc_zeroed` allocation on the
+/// host heap. It is not an `MTLBuffer`, is not wrapped with
+/// `newBufferWithBytesNoCopy:`, and no GPU can read it. Page alignment is a
+/// prerequisite for such a wrap, not the wrap itself.
+///
+/// The name is retained for API continuity and is itself misleading; renaming
+/// it is tracked in `docs/specifications/security-architecture-plan.md`.
+/// Earlier documentation on this struct claimed CPU and GPU "can access it
+/// without data copies", which was never true.
 ///
 /// # Safety
 ///
-/// The buffer is page-aligned for Metal compatibility and uses
-/// RAII for automatic deallocation.
+/// The buffer is page-aligned and uses RAII for automatic deallocation.
 ///
 /// # Thread Safety
 ///
