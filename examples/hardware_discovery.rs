@@ -118,9 +118,18 @@ fn metal_panel() -> Vec<manzana::MetalDevice> {
         for (i, device) in devices.iter().enumerate() {
             row("");
             row(&format!("GPU {i}: {}", device.name));
+            // The provenance label must follow the value's actual source.
+            // Printing "(from system_profiler)" unconditionally attributed
+            // manzana's own 16 GiB constant to the report -- and on Apple
+            // Silicon, which prints no VRAM line at all, that was EVERY run.
             row(&format!(
-                "  VRAM: {:.1} GB (from system_profiler)",
-                device.vram_gb()
+                "  VRAM: {:.1} GiB {}",
+                device.vram_gb(),
+                if device.reported_vram_bytes.is_some() {
+                    "(read from the system_profiler VRAM line)"
+                } else {
+                    "(manzana's default -- system_profiler printed no VRAM line)"
+                }
             ));
             row(&format!(
                 "  Unified memory: {} (inferred from the name)",

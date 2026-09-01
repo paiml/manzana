@@ -34,6 +34,16 @@ JSON_OUT="${JSON_OUT:-}"
 
 die() { printf 'harness failure: %s\n' "$*" >&2; exit 2; }
 
+# Does BODY call the FREE function NAME?
+#
+# `name(` must not be preceded by `::`, or every `Vec::new(` in the crate
+# resolves to a free fn called `new`. Also rejects a longer identifier that
+# merely ends in NAME (`fallback_device(` must not match `device(`).
+matches_bare_call() {
+  printf '%s' "$1" | grep -qE "(^|[^A-Za-z0-9_:])$2\\(" && return 0
+  return 1
+}
+
 [ -f "$CHARTER" ] || die "charter not found at $CHARTER"
 
 # ---------------------------------------------------------------------------
@@ -156,10 +166,43 @@ trap cleanup EXIT
 for f in "${HW_PATHS[@]}"; do
   [ -f "$f" ] || { printf 'charter lists a path that does not exist: %s\n' "$f" >&2; exit 2; }
   awk -v FILE="$f" '
-    /^[[:space:]]*(pub )?(const |async |unsafe )*fn [a-zA-Z_]/ && depth==0 {
+    # Track the enclosing `impl` type, so a method is keyed Type::name rather
+    # than by its bare name. Without this, EVERY `Vec::new()` in the crate
+    # resolved to AfterburnerMonitor::new -- which really does reach IOKit --
+    # and laundered a boundary verdict onto functions that reach nothing.
+    # Proven by tests/fixtures/quorum/red_bare_name_call_edge.
+    /^[[:space:]]*(pub[^ ]* )?(unsafe )?impl([[:space:]]|<)/ && depth==0 {
+      t=$0
+      sub(/.*impl/, "", t)
+      sub(/^[[:space:]]*<[^>]*>/, "", t)          # impl<T> ...
+      sub(/^[[:space:]]+/, "", t)                 # MUST precede the cut below:
+                                                  # without it the leading space
+                                                  # IS the first [[:space:]] and
+                                                  # the whole name is cut, so
+                                                  # impltype was always empty and
+                                                  # every Self:: call failed to
+                                                  # resolve.
+      sub(/[[:space:]]+for[[:space:]].*/, "", t)  # impl Trait for Type
+      gsub(/[{[:space:]].*$/, "", t)
+      sub(/<.*$/, "", t)                          # Type<T>
+      impltype=t
+    }
+    # `pub(super) fn` / `pub(crate) fn` must be EXTRACTED, or their bodies are
+    # not in the call graph at all. They were not: this regex accepted only
+    # `pub ` and bare `fn `, so THREE of the five functions in
+    # src/metal/detect.rs -- including detect_gpus_via_system_profiler, the one
+    # that actually reaches `Command::new` -- were invisible. The whole metal
+    # chain was reaching nothing, and the only reason the gate passed was the
+    # bare-name laundering fixed above. Two holes cancelling out.
+    #
+    # ispub stays narrow: only a bare `pub ` is crate-public API and counts in
+    # the verdict denominator. Restricted visibilities are graph nodes, not
+    # public surface.
+    /^[[:space:]]*(pub(\([a-z]+\))? )?(const |async |unsafe )*fn [a-zA-Z_]/ && depth==0 {
       name=$0
-      ispub = ($0 ~ /^[[:space:]]*pub /) ? 1 : 0
+      ispub = ($0 ~ /^[[:space:]]*pub[[:space:]]/) ? 1 : 0
       sub(/.*fn[[:space:]]+/, "", name); sub(/[(<].*/, "", name)
+      qual = (impltype == "") ? name : impltype "::" name
       capturing=1; start=NR; body=""; callbody=""; depth=0; sig=""; insig=1
     }
     capturing {
@@ -170,6 +213,12 @@ for f in "${HW_PATHS[@]}"; do
       # it as reaching -- both limbs satisfiable by prose. Braces inside
       # comments also corrupted the extent counting.
       sub(/\/\/.*$/, "", line)
+      # Same for /* */ block comments and STRING LITERALS. Both limbs are text
+      # matches, so `Err(e("... unimplemented ..."))` -- or a block comment
+      # mentioning a boundary symbol -- satisfied them without the code doing
+      # anything. A refusal must be a return, not a mention.
+      gsub(/\/\*[^*]*\*+([^\/*][^*]*\*+)*\//, " ", line)
+      gsub(/"[^"]*"/, "\"\"", line)
       body = body " " line
       if (insig) { sig = sig " " line; if (index(line,"{")>0) insig=0 }
       else { callbody = callbody " " line }
@@ -177,7 +226,7 @@ for f in "${HW_PATHS[@]}"; do
       # rr: does the SIGNATURE (not the body) promise a fallible result?
       if (depth<=0 && index(body,"{")>0) {
         rr = (sig ~ /->[[:space:]]*(crate::)?(error::)?Result/) ? 1 : 0
-        print FILE ":" start "\t" name "\t" FILE "\t" start "\t" ispub "\t" rr "\t" body "\t" callbody
+        print FILE ":" start "\t" name "\t" FILE "\t" start "\t" ispub "\t" rr "\t" body "\t" callbody "\t" qual "\t" impltype
         capturing=0
       }
     }' "$f"
@@ -187,13 +236,13 @@ done > "$WORK/fns.tsv"
 
 # Pass 2 -- direct boundary contact per fn.
 : > "$WORK/direct.tsv"
-while IFS=$'\t' read -r key name file start ispub rr body callbody; do
+while IFS=$'\t' read -r key name file start ispub rr body callbody qual impltype; do
   hit=0
   for needle in "${ALLOW_CRATES[@]}" "${ALLOW_HOST[@]}" "${ALLOW_CONSTRUCTS[@]}"; do
     [ -n "$needle" ] || continue
     case "$body" in *"$needle"*) hit=1; break ;; esac
   done
-  printf '%s\t%s\t%d\n' "$key" "$name" "$hit" >> "$WORK/direct.tsv"
+  printf '%s\t%s\t%d\t%s\t%s\n' "$key" "$name" "$hit" "$qual" "$impltype" >> "$WORK/direct.tsv"
 done < "$WORK/fns.tsv"
 
 # Pass 3 -- transitive closure over intra-crate call edges. A fn reaches a
@@ -203,20 +252,54 @@ cp "$WORK/direct.tsv" "$WORK/reach.tsv"
 total_fns=$(wc -l < "$WORK/fns.tsv")
 for _ in $(seq 1 "$total_fns"); do
   changed=0
-  while IFS=$'\t' read -r key name file start ispub rr body callbody; do
+  while IFS=$'\t' read -r key name file start ispub rr body callbody qual impltype; do
     cur=$(awk -F'\t' -v k="$key" '$1==k {print $3; exit}' "$WORK/reach.tsv")
     [ "$cur" = "1" ] && continue
-    while IFS=$'\t' read -r ckey cname creach; do
+    while IFS=$'\t' read -r ckey cname creach cqual cimpl; do
       [ "$creach" = "1" ] || continue
       [ "$ckey" = "$key" ] && continue
-      # A CALL SITE `cname(` in the body WITHOUT its signature. Bare-name
-      # matching let a fn match its own declaration, and any identifier that
-      # merely contained the name.
-      case "$callbody" in *"$cname("*)
+      # A CALL SITE in the body WITHOUT its signature, resolved by QUALIFIED
+      # name.
+      #
+      # Bare-name matching let `Vec::new()` resolve to `AfterburnerMonitor::new`
+      # -- which genuinely reaches IOKit -- and certified functions that reach
+      # nothing. tests/fixtures/quorum/red_bare_name_call_edge is that exact
+      # shape and the gate passed it.
+      #
+      # A method (one declared inside an `impl`) is now only reached by
+      # `Type::name(` or, from inside the same impl, `Self::name(`. A free
+      # function is only reached by a bare `name(` -- and `matches_bare_call`
+      # rejects one preceded by `::`, so `Vec::new(` no longer counts.
+      matched=0
+      if [ -n "$cimpl" ]; then
+        # A method. Reached by an associated call (`Type::m(`), a same-impl
+        # `Self::m(`, or -- the common case in Rust and the one the first cut
+        # of this fix forgot -- a method call on a receiver, `x.m(`.
+        #
+        # `.m(` does NOT reopen the hole this fix closed: `Vec::new()` is
+        # `::new(`, not `.new(`, so it still resolves to nothing.
+        case "$callbody" in
+          *"$cimpl::$cname("*) matched=1 ;;
+          *".$cname("*) matched=1 ;;
+          *"Self::$cname("*) [ "$impltype" = "$cimpl" ] && matched=1 ;;
+        esac
+      else
+        # A free function: a bare `f(`, or one qualified by ITS OWN module,
+        # `detect::f(`. Requiring the qualifier to match the callee's file stem
+        # is what separates a real module path from `Vec::new(` -- both are
+        # `ident::name(` and nothing else in the text tells them apart.
+        cmod=$(basename "${ckey%%:*}" .rs)
+        case "$callbody" in
+          *"$cmod::$cname("*) matched=1 ;;
+          *"super::$cname("*) matched=1 ;;
+        esac
+        [ "$matched" = "1" ] || matches_bare_call "$callbody" "$cname" && matched=1
+      fi
+      if [ "$matched" = "1" ]; then
         awk -F'\t' -v k="$key" 'BEGIN{OFS="\t"} {if ($1==k) $3=1; print}' "$WORK/reach.tsv" > "$WORK/r2" \
           && mv "$WORK/r2" "$WORK/reach.tsv"
-        changed=1; break ;;
-      esac
+        changed=1; break
+      fi
     done < "$WORK/direct.tsv"
   done < "$WORK/fns.tsv"
   [ "$changed" -eq 0 ] && break
@@ -224,7 +307,7 @@ for _ in $(seq 1 "$total_fns"); do
 done
 
 # Pass 4 -- verdicts, public fns only.
-while IFS=$'\t' read -r key name file start ispub rr body callbody; do
+while IFS=$'\t' read -r key name file start ispub rr body callbody qual impltype; do
   [ "$ispub" = "1" ] || continue
   checked=$((checked + 1))
 

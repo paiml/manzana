@@ -86,7 +86,7 @@ fn test_afterburner_stats_api() {
 
     // Verify all methods work correctly
     assert!(stats.is_active());
-    assert!((stats.capacity_used_percent() - 21.739).abs() < 0.01);
+    assert!((stats.capacity_used_percent().unwrap() - 21.739).abs() < 0.01);
     assert_eq!(stats.is_temperature_safe(), Some(true));
 }
 

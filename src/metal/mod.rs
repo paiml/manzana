@@ -190,12 +190,6 @@ impl MetalCompute {
         detect::detect_gpus_via_system_profiler()
     }
 
-    /// Returns no devices when detection fails. See [`detect::fallback_device`].
-    #[cfg(target_os = "macos")]
-    fn fallback_device() -> Vec<MetalDevice> {
-        detect::fallback_device()
-    }
-
     /// Whether enumeration reported at least one device.
     ///
     /// Equivalent to `!devices().is_empty()`, and it enumerates the same way —
@@ -454,3 +448,6 @@ pub fn is_available() -> bool {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod parse_tests;

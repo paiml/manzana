@@ -49,6 +49,31 @@ GATE="scripts/check_hardware_reachability.sh"
   [[ "$output" == *"b_capability_lie.rs"* ]]
 }
 
+@test "MZNQ-4: a call edge is not laundered by a bare name (Vec::new)" {
+  # `AfterburnerMonitor::new` reaches IOKit, so the gate marks the NAME `new`
+  # as boundary-reaching. Call edges were resolved by bare name, so every
+  # `Vec::new()`, `String::new()` and `HashMap::new()` in the crate resolved to
+  # it -- certifying functions that touch no hardware at all.
+  #
+  # Finding it also exposed a second hole it had been masking: the extractor
+  # accepted only `pub ` and bare `fn `, so `pub(super) fn` was never in the
+  # graph, and all of src/metal/detect.rs -- including the one function that
+  # actually calls Command::new -- was invisible. Two holes cancelling out.
+  run env FIXTURE_DIR=tests/fixtures/quorum/red_bare_name_call_edge bash "$GATE"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"read_stats"* ]]
+}
+
+@test "MZNQ-4: mentioning a refusal in prose is not refusing" {
+  # Both limbs are text matches. `//` comments were stripped; block comments
+  # and STRING LITERALS were not, so a fabricating function that merely named
+  # Error::unimplemented in either was certified as refusing.
+  run env FIXTURE_DIR=tests/fixtures/quorum/red_refusal_in_prose bash "$GATE"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"fabricates_with_symbol_in_a_string"* ]]
+  [[ "$output" == *"fabricates_with_symbol_in_a_block_comment"* ]]
+}
+
 @test "backtest: the corrected gate catches 0.2.0 sign, verify, delete AND is_available" {
   # The name-keyed gate reported 11 violations on the published 0.2.0 but
   # marked every is_available "reaches-boundary", missing the headline
@@ -95,22 +120,6 @@ GATE="scripts/check_hardware_reachability.sh"
   run bash scripts/mutate_reachability_gate.sh
   [ "$status" -eq 0 ]
   [[ "$output" == *"100% kill"* ]]
-}
-
-@test "MZNQ-005: extended SATD is clean on the current crate" {
-  run pmat analyze satd --extended --fail-on-violation
-  [ "$status" -eq 0 ]
-}
-
-@test "MZNQ-005 discrimination: extended SATD flags the 0.2.0 euphemisms" {
-  # Default SATD scored this file at ZERO debt while it contained
-  # "// Stub implementation - generates a fake public key".
-  d="$(mktemp -d)"; mkdir -p "$d/src"
-  cp tests/fixtures/quorum/satd_euphemism/secure_enclave_0_2_0.rs.fixture "$d/src/secure_enclave.rs"
-  printf '[package]\nname = "satdfix"\nversion = "0.1.0"\nedition = "2021"\n' > "$d/Cargo.toml"
-  run bash -c "cd '$d' && pmat analyze satd --extended 2>&1"
-  rm -rf -- "$d"
-  [[ "$output" == *"Found 9 SATD violations"* ]]
 }
 
 @test "gate emits a machine-readable receipt" {

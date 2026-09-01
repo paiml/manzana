@@ -97,7 +97,7 @@ impl fmt::Display for ProResCodec {
 ///     ..Default::default()
 /// };
 /// assert!(stats.is_active());
-/// assert!((stats.capacity_used_percent() - 43.478).abs() < 0.01);
+/// assert!((stats.capacity_used_percent().unwrap() - 43.478).abs() < 0.01);
 /// ```
 #[derive(Debug, Clone)]
 pub struct AfterburnerStats {
@@ -194,13 +194,20 @@ impl AfterburnerStats {
         self.streams_active > 0
     }
 
-    /// Returns `streams_active` as a percentage of `streams_capacity`.
+    /// `streams_active` as a percentage of `streams_capacity`, or `None` when
+    /// the percentage cannot be computed.
     ///
-    /// Returns `0.0` when `streams_capacity` is `0`, rather than dividing by
-    /// zero. The result is not clamped: if you construct a snapshot whose
-    /// active count exceeds its capacity, you get a value above 100.
+    /// `None` when `streams_capacity` is `0`. This returned `0.0` there until
+    /// 0.3.0, which is a plausible occupancy reading -- indistinguishable from
+    /// a card that genuinely has no streams running against a known capacity --
+    /// standing in for "there is no denominator, so there is no percentage".
+    /// [`is_temperature_safe`](Self::is_temperature_safe) already used `Option`
+    /// for exactly this "cannot say" case; this now matches it.
     ///
-    /// This is stream occupancy, which is a different measurement from
+    /// The result is not clamped: a snapshot you built whose active count
+    /// exceeds its capacity yields a value above 100.
+    ///
+    /// This is stream occupancy, a different measurement from
     /// [`utilization_percent`](Self::utilization_percent) — that one is read
     /// from the card.
     ///
@@ -214,21 +221,21 @@ impl AfterburnerStats {
     ///     streams_capacity: 23,
     ///     ..Default::default()
     /// };
-    /// assert!((stats.capacity_used_percent() - 43.478).abs() < 0.01);
+    /// assert!((stats.capacity_used_percent().unwrap() - 43.478).abs() < 0.01);
     ///
-    /// let unknown_capacity = AfterburnerStats {
+    /// let no_denominator = AfterburnerStats {
     ///     streams_active: 5,
     ///     streams_capacity: 0,
     ///     ..Default::default()
     /// };
-    /// assert_eq!(unknown_capacity.capacity_used_percent(), 0.0);
+    /// assert_eq!(no_denominator.capacity_used_percent(), None);
     /// ```
     #[must_use]
-    pub fn capacity_used_percent(&self) -> f64 {
+    pub fn capacity_used_percent(&self) -> Option<f64> {
         if self.streams_capacity == 0 {
-            return 0.0;
+            return None;
         }
-        (f64::from(self.streams_active) / f64::from(self.streams_capacity)) * 100.0
+        Some((f64::from(self.streams_active) / f64::from(self.streams_capacity)) * 100.0)
     }
 
     /// Returns whether the recorded temperature is below 100 °C.

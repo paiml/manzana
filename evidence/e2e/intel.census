@@ -1,3 +1,4 @@
+afterburner::tests::test_capacity_used_percent_is_none_without_a_denominator
 afterburner::tests::test_convert_raw_stats_clamps_negative_utilization
 afterburner::tests::test_convert_raw_stats_clamps_utilization
 afterburner::tests::test_convert_raw_stats_filters_invalid_power
@@ -12,9 +13,8 @@ afterburner::tests::test_new_graceful_on_missing_hardware
 afterburner::tests::test_prores_codec_display
 afterburner::tests::test_prores_codec_equality
 afterburner::tests::test_prores_codec_hash
-afterburner::tests::test_rapid_stats_creation
+afterburner::tests::test_rapid_polling_does_not_crash_or_fabricate
 afterburner::tests::test_stats_capacity_used_percent
-afterburner::tests::test_stats_capacity_used_percent_zero_capacity
 afterburner::tests::test_stats_clone
 afterburner::tests::test_stats_debug
 afterburner::tests::test_stats_is_active
@@ -52,13 +52,21 @@ metal::tests::test_device_construction_agrees_with_enumeration
 metal::tests::test_device_is_apple_silicon_follows_unified_memory
 metal::tests::test_device_properties
 metal::tests::test_device_vram_gb_converts_bytes
-metal::tests::test_devices_no_panic
+metal::tests::test_devices_reports_what_system_profiler_said
 metal::tests::test_dispatch_is_unimplemented
 metal::tests::test_is_available_consistent
 metal::tests::test_metal_buffer_accessors
 metal::tests::test_metal_buffer_methods
 metal::tests::test_new_invalid_index
 metal::tests::test_no_fabricated_device_when_detection_fails
+metal::tests::test_parse_drops_a_vram_line_with_no_device
+metal::tests::test_parse_falls_back_when_there_is_no_vram_line
+metal::tests::test_parse_finds_every_gpu_not_just_the_first
+metal::tests::test_parse_ignores_an_empty_chipset_model
+metal::tests::test_parse_invents_no_device_when_nothing_is_reported
+metal::tests::test_parse_leaves_the_default_when_vram_does_not_parse
+metal::tests::test_parse_reads_a_vram_line_in_mb
+metal::tests::test_parse_reads_the_vram_line_when_there_is_one
 neural_engine::tests::test_ane_op_display
 neural_engine::tests::test_ane_op_display_covers_every_variant
 neural_engine::tests::test_ane_op_equality
@@ -80,7 +88,7 @@ neural_engine::tests::test_tensor_new_valid
 neural_engine::tests::test_tensor_zeros
 prop_capacity_formula_correct
 prop_capacity_used_percent_non_negative
-prop_capacity_zero_means_zero_percent
+prop_capacity_zero_means_no_percentage
 prop_error_clone_equals
 prop_error_code_iokit
 prop_error_code_none_for_others
@@ -105,9 +113,9 @@ src/afterburner/mod.rs - afterburner::AfterburnerMonitor::new (line 137)
 src/afterburner/mod.rs - afterburner::AfterburnerMonitor::stats (line 176)
 src/afterburner/mod.rs - afterburner::is_available (line 301)
 src/afterburner/stats.rs - afterburner::stats::AfterburnerStats (line 91)
-src/afterburner/stats.rs - afterburner::stats::AfterburnerStats::capacity_used_percent (line 209)
+src/afterburner/stats.rs - afterburner::stats::AfterburnerStats::capacity_used_percent (line 216)
 src/afterburner/stats.rs - afterburner::stats::AfterburnerStats::is_active (line 184)
-src/afterburner/stats.rs - afterburner::stats::AfterburnerStats::is_temperature_safe (line 247)
+src/afterburner/stats.rs - afterburner::stats::AfterburnerStats::is_temperature_safe (line 254)
 src/afterburner/stats.rs - afterburner::stats::ProResCodec (line 17)
 src/error/mod.rs - error (line 23)
 src/error/mod.rs - error::Error::error_code (line 481)
@@ -141,7 +149,7 @@ src/metal/types.rs - metal::types::MetalDevice::is_apple_silicon (line 112)
 src/metal/types.rs - metal::types::MetalDevice::vram_gb (line 132)
 src/neural_engine/mod.rs - neural_engine (line 20)
 src/neural_engine/mod.rs - neural_engine::AneCapabilities::m1_baseline (line 100)
-src/neural_engine/mod.rs - neural_engine::NeuralEngineSession::load (line 302)
+src/neural_engine/mod.rs - neural_engine::NeuralEngineSession::load (line 309)
 src/neural_engine/mod.rs - neural_engine::Tensor::numel (line 191)
 src/unified_memory/buffer.rs - unified_memory::buffer::UmaBuffer (line 39)
 src/unified_memory/buffer.rs - unified_memory::buffer::UmaBuffer (line 65)

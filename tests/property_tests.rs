@@ -82,12 +82,14 @@ proptest! {
     // (can exceed 100% if streams_active > streams_capacity)
     #[test]
     fn prop_capacity_used_percent_non_negative(stats in afterburner_stats_strategy()) {
-        prop_assert!(stats.capacity_used_percent() >= 0.0);
+        prop_assert!(stats.capacity_used_percent().unwrap_or(0.0) >= 0.0);
     }
 
-    // Property: capacity_used_percent is 0 when capacity is 0
+    // Property: no capacity means no percentage, for EVERY active count.
+    // Previously asserted 0.0, which made a card with 99 streams running
+    // against an unknown capacity report "0% used".
     #[test]
-    fn prop_capacity_zero_means_zero_percent(
+    fn prop_capacity_zero_means_no_percentage(
         streams_active in 0u32..100
     ) {
         let stats = AfterburnerStats {
@@ -95,7 +97,7 @@ proptest! {
             streams_capacity: 0,
             ..Default::default()
         };
-        prop_assert!((stats.capacity_used_percent() - 0.0).abs() < f64::EPSILON);
+        prop_assert_eq!(stats.capacity_used_percent(), None);
     }
 
     // Property: temperature safety check is consistent
@@ -204,7 +206,7 @@ proptest! {
             ..Default::default()
         };
         let expected = (f64::from(active) / f64::from(capacity)) * 100.0;
-        prop_assert!((stats.capacity_used_percent() - expected).abs() < 0.001);
+        prop_assert!((stats.capacity_used_percent().unwrap() - expected).abs() < 0.001);
     }
 }
 
@@ -315,7 +317,7 @@ mod determinism_tests {
         // Run multiple times and verify same result
         for _ in 0..100 {
             assert!(stats.is_active());
-            assert!((stats.capacity_used_percent() - 43.478).abs() < 0.01);
+            assert!((stats.capacity_used_percent().unwrap() - 43.478).abs() < 0.01);
             assert_eq!(stats.is_temperature_safe(), Some(true));
         }
     }

@@ -39,9 +39,24 @@ fn main() {
         println!("{MID}");
         row("Read from system_profiler:");
         row(&format!("  Name:  {}", device.name));
-        row(&format!("  VRAM:  {:.1} GB", device.vram_gb()));
+        // VRAM belongs on the measured side ONLY when the report carried a
+        // VRAM line. On Apple Silicon it never does, so this panel used to
+        // file a crate constant under "Read from system_profiler".
+        if device.reported_vram_bytes.is_some() {
+            // Some(x) implies max_buffer_length == x, so vram_gb() is that
+            // figure and no second conversion is needed.
+            row(&format!("  VRAM:  {:.1} GiB", device.vram_gb()));
+        } else {
+            row("  VRAM:  not reported for this device");
+        }
         row("");
         row("Not queried from the device - synthesized or derived:");
+        if device.reported_vram_bytes.is_none() {
+            row(&format!(
+                "  VRAM:               {:.1} GiB (manzana default, not read)",
+                device.vram_gb()
+            ));
+        }
         row(&format!(
             "  Registry ID:        {} (enumeration index + 1)",
             device.registry_id

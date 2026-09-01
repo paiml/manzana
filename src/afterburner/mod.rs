@@ -23,11 +23,15 @@
 //! # What the statistics do and do not tell you
 //!
 //! [`AfterburnerStats`] is assembled from IOKit registry properties, and a
-//! property that is not in the registry is replaced by a default rather than
-//! reported as missing. A card whose registry uses different property names
-//! than this crate looks up therefore reads as an idle card: zero streams,
-//! zero utilization, no temperature. See [`AfterburnerStats`] for the exact
-//! per-field behaviour.
+//! property that is not in the registry is an ERROR: [`AfterburnerMonitor::stats`]
+//! returns `Err` rather than a snapshot with a stand-in value in it. A card
+//! whose registry uses different property names than this crate looks up
+//! therefore reports a failure to read, not an idle card. See
+//! [`AfterburnerStats`] for the exact per-field behaviour.
+//!
+//! Until 0.3.0 the missing property was silently defaulted and such a card
+//! "read as an idle card: zero streams, zero utilization, no temperature" --
+//! indistinguishable from a genuine idle reading.
 //!
 //! [`AfterburnerStats::codec_breakdown`] is always empty. Nothing in this
 //! crate populates it.
@@ -154,9 +158,9 @@ impl AfterburnerMonitor {
     /// Reads a fresh statistics snapshot from the card's IOKit registry entry.
     ///
     /// Each call copies the service's property dictionary out of the registry
-    /// and converts it. Absent properties are replaced by defaults and
-    /// out-of-range readings are discarded — see [`AfterburnerStats`] for the
-    /// per-field table, which you need in order to read the result correctly.
+    /// and converts it. An absent property is an error, not a default;
+    /// out-of-range readings on the optional fields are discarded — see
+    /// [`AfterburnerStats`] for the per-field table.
     ///
     /// # Errors
     ///
@@ -167,9 +171,15 @@ impl AfterburnerMonitor {
     /// - [`Error::IoKit`] with code `0` if that call
     ///   succeeds but hands back a null dictionary.
     ///
-    /// Nothing else fails. In particular, a registry that contains none of the
+    /// - [`Error::IoKit`] with code `0` if the dictionary is readable but does
+    ///   not carry one of `StreamsActive`, `StreamsCapacity`, `Utilization` or
+    ///   `Throughput`. The message names the missing key.
+    ///
+    /// That last case is new in 0.3.0, and this section previously said the
+    /// opposite of it in as many words: "a registry that contains none of the
     /// properties manzana looks for is not an error: it yields a defaulted
-    /// snapshot.
+    /// snapshot." It now errors, and a `# Errors` section that denies the
+    /// error its function returns is worse than none.
     ///
     /// # Example
     ///

@@ -209,9 +209,14 @@ impl Tensor {
 
 /// Neural Engine inference session.
 ///
-/// Provides access to Apple's Neural Engine for running CoreML models.
-/// On systems without ANE (Intel Macs), this gracefully falls back
-/// to CPU execution.
+/// **A handle that refuses.** It does not provide access to the Neural Engine,
+/// and there is no CPU fallback: [`load`](Self::load) and [`infer`](Self::infer)
+/// return [`Error::Unimplemented`] on every platform, Intel Macs included.
+///
+/// Until 0.3.0 this doc read "Provides access to Apple's Neural Engine for
+/// running CoreML models. On systems without ANE (Intel Macs), this gracefully
+/// falls back to CPU execution." No such access and no such fallback has ever
+/// existed in this crate.
 ///
 /// # Thread Safety
 ///
@@ -292,10 +297,17 @@ impl NeuralEngineSession {
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - The model file doesn't exist
-    /// - The model is corrupted
-    /// - The model format is unsupported
+    /// - [`Error::InvalidInput`] if `model_path` does not end in `.mlmodel` or
+    ///   `.mlmodelc`.
+    /// - [`Error::Unimplemented`] in every other case.
+    ///
+    /// It does **not** return an error for a missing or corrupt file, because
+    /// it never opens one: the extension check is the only thing that happens
+    /// before the refusal. This list previously promised "the model file
+    /// doesn't exist" and "the model is corrupted", which described a
+    /// filesystem check the function does not perform -- a doc claiming work
+    /// that is not done, which is the defect class this release exists to
+    /// remove.
     ///
     /// # Example
     ///

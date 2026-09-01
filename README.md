@@ -124,9 +124,17 @@ makes no Metal and no IOKit call for Metal devices, and parses one
 | `is_low_power` | `true` if the name contains `"Intel"` or `"Integrated"` | No — derived from the name string |
 | `has_unified_memory`, `is_apple_silicon()` | `true` if the name contains `"Apple"` **or** the build target is `aarch64` | No — derived from the name and the build target |
 
-On an Apple M4, `vram_gb()` reports exactly 16.0 GB, which is the Apple Silicon
-fallback constant. Treat that figure as a default unless you have confirmed
-that `system_profiler` printed a `VRAM` line on your machine.
+On an Apple M4, `vram_gb()` reports exactly 16.0 GiB whatever the machine's
+memory, because `system_profiler` prints no `VRAM` line for unified memory and
+that figure is manzana's fallback constant. **Read
+`MetalDevice::reported_vram_bytes` to tell the two apart:** `Some(bytes)` is
+what the report printed, `None` means `max_buffer_length` is the constant and
+describes no hardware.
+
+That field is new in 0.3.0, and it exists because both shipped examples used to
+print the constant under the label `(from system_profiler)` — a crate constant
+presented as a hardware measurement, with a named source. This README carried
+that line as captured M4 output while the table above it said the opposite.
 
 `MetalCompute::devices()` spawns `system_profiler` on every call, and
 `MetalCompute::is_available()` calls `devices()`. Cache the result if you are
@@ -318,23 +326,22 @@ reported no GPU here. Requires macOS with a Metal-capable GPU.
 
 ### Apple M4, macOS 26.5.2
 
-```text
-┌─────────────────────────────────────────────────────────────┐
-│ Metal GPU                                                   │
-├─────────────────────────────────────────────────────────────┤
-│ Present: yes (1 device(s) enumerated)                       │
-│                                                             │
-│ GPU 0: Apple M4                                             │
-│   VRAM: 16.0 GB (from system_profiler)                      │
-│   Unified memory: yes (inferred from the name)              │
-│   registry_id, thread limits and headless flag are          │
-│   synthesized or hardcoded; see the MetalDevice docs.       │
-│                                                             │
-│ Implemented: enumeration (name, VRAM). Shader compilation,  │
-│ buffer allocation and dispatch are not - see the            │
-│ metal_compute example for their refusals.                   │
-└─────────────────────────────────────────────────────────────┘
+**Not captured at this revision.** The M4 in the test matrix was unreachable
+when the VRAM-provenance fix landed, so the block that used to sit here — which
+read `VRAM: 16.0 GB (from system_profiler)` for a figure `system_profiler` never
+printed — has been removed rather than edited to what it *would* now say.
+
+Pasting output nobody ran is the defect this crate exists to remove, so this
+section stays empty until the example is re-run on the M4. Reproduce it with:
+
+```console
+$ cargo run --example hardware_discovery
+$ cargo run --example metal_compute
 ```
+
+The macOS lane is still exercised every commit: GitHub Actions runs the full
+suite on `macos-latest`, and `scripts/e2e_matrix.sh` runs it on the M4 whenever
+that host is up.
 
 The Neural Engine panel prints no TOPS or core count, because `capabilities()`
 returns `None` rather than a datasheet figure. `metal_compute` enumerates the

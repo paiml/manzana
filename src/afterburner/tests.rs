@@ -69,14 +69,14 @@ fn test_stats_capacity_used_percent() {
         streams_active: 0,
         ..Default::default()
     };
-    assert!((stats.capacity_used_percent() - 0.0).abs() < 0.01);
+    assert!((stats.capacity_used_percent().unwrap() - 0.0).abs() < 0.01);
 
     let stats = AfterburnerStats {
         streams_capacity: 23,
         streams_active: 23,
         ..Default::default()
     };
-    assert!((stats.capacity_used_percent() - 100.0).abs() < 0.01);
+    assert!((stats.capacity_used_percent().unwrap() - 100.0).abs() < 0.01);
 
     let stats = AfterburnerStats {
         streams_capacity: 23,
@@ -84,17 +84,34 @@ fn test_stats_capacity_used_percent() {
         ..Default::default()
     };
     let expected = (10.0 / 23.0) * 100.0;
-    assert!((stats.capacity_used_percent() - expected).abs() < 0.01);
+    assert!((stats.capacity_used_percent().unwrap() - expected).abs() < 0.01);
 }
 
+/// No denominator means no percentage -- not zero percent.
+///
+/// This asserted `0.0` until 0.3.0, which is a plausible occupancy figure
+/// standing in for "cannot be computed". Two different card states -- five
+/// streams running against an unknown capacity, and a card with nothing
+/// running -- produced the same `0.0`.
 #[test]
-fn test_stats_capacity_used_percent_zero_capacity() {
+fn test_capacity_used_percent_is_none_without_a_denominator() {
     let stats = AfterburnerStats {
         streams_capacity: 0,
         streams_active: 5,
         ..Default::default()
     };
-    assert!((stats.capacity_used_percent() - 0.0).abs() < 0.01);
+    assert_eq!(
+        stats.capacity_used_percent(),
+        None,
+        "0/0 is not 0%; it is not a percentage at all"
+    );
+    // And the genuinely-idle case is distinguishable from it.
+    let idle = AfterburnerStats {
+        streams_capacity: 23,
+        streams_active: 0,
+        ..Default::default()
+    };
+    assert_eq!(idle.capacity_used_percent(), Some(0.0));
 }
 
 #[test]
@@ -320,13 +337,42 @@ fn test_is_available_static() {
     let _ = is_available();
 }
 
-// F024: No crash on rapid polling (simulated)
+/// F024: repeated polling does not crash, and does not start inventing data.
+///
+/// This test was named for rapid POLLING and did no polling: it constructed
+/// `AfterburnerStats::default()` a thousand times and asserted the constructed
+/// value was idle. It never called `stats()`, so it would have passed with the
+/// whole IOKit path deleted -- a test decoupled from the thing its name claims
+/// to exercise.
+///
+/// It now polls the card if there is one. On a host with no Afterburner
+/// `AfterburnerMonitor::new()` returns `None`, and the assertion there is that
+/// no monitor was invented -- which is not vacuous either: it fails if
+/// `new()` ever starts handing back a monitor for a card that is not present.
 #[test]
-fn test_rapid_stats_creation() {
-    // Create and drop many stats objects rapidly
-    for _ in 0..1000 {
-        let stats = AfterburnerStats::default();
-        assert!(!stats.is_active());
+fn test_rapid_polling_does_not_crash_or_fabricate() {
+    match AfterburnerMonitor::new() {
+        Some(monitor) => {
+            for i in 0..1000 {
+                match monitor.stats() {
+                    // A reading must be self-consistent every single time.
+                    Ok(stats) => assert!(
+                        stats.capacity_used_percent().is_none() || stats.streams_capacity > 0,
+                        "poll {i}: a percentage without a denominator"
+                    ),
+                    // Refusing is fine, and must keep refusing rather than
+                    // degrading into a fabricated reading under repetition.
+                    Err(e) => assert!(
+                        e.to_string().contains("carries no"),
+                        "poll {i}: unexpected error shape: {e}"
+                    ),
+                }
+            }
+        }
+        None => assert!(
+            !AfterburnerMonitor::is_available(),
+            "no monitor was constructed, so is_available() must not claim a card"
+        ),
     }
 }
 

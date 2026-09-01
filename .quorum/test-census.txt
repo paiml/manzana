@@ -1,3 +1,4 @@
+afterburner::tests::test_capacity_used_percent_is_none_without_a_denominator
 afterburner::tests::test_convert_raw_stats_clamps_negative_utilization
 afterburner::tests::test_convert_raw_stats_clamps_utilization
 afterburner::tests::test_convert_raw_stats_filters_invalid_power
@@ -12,9 +13,8 @@ afterburner::tests::test_new_graceful_on_missing_hardware
 afterburner::tests::test_prores_codec_display
 afterburner::tests::test_prores_codec_equality
 afterburner::tests::test_prores_codec_hash
-afterburner::tests::test_rapid_stats_creation
+afterburner::tests::test_rapid_polling_does_not_crash_or_fabricate
 afterburner::tests::test_stats_capacity_used_percent
-afterburner::tests::test_stats_capacity_used_percent_zero_capacity
 afterburner::tests::test_stats_clone
 afterburner::tests::test_stats_debug
 afterburner::tests::test_stats_is_active
@@ -43,6 +43,15 @@ error::tests::test_iokit_error_includes_code
 error::tests::test_subsystem_display
 ffi::tests::test_module_compiles
 ffi::tests::test_non_macos_get_stats_reports_absence
+metal::parse_tests::test_parse_drops_a_vram_line_with_no_device
+metal::parse_tests::test_parse_falls_back_when_there_is_no_vram_line
+metal::parse_tests::test_parse_finds_every_gpu_not_just_the_first
+metal::parse_tests::test_parse_ignores_an_empty_chipset_model
+metal::parse_tests::test_parse_invents_no_device_when_nothing_is_reported
+metal::parse_tests::test_parse_leaves_the_default_when_vram_does_not_parse
+metal::parse_tests::test_parse_reads_a_vram_line_in_mb
+metal::parse_tests::test_parse_reads_the_vram_line_when_there_is_one
+metal::parse_tests::test_reported_vram_distinguishes_measurement_from_default
 metal::tests::test_allocate_buffer_is_unimplemented
 metal::tests::test_compile_shader_is_unimplemented
 metal::tests::test_compiled_shader_name_accessor
@@ -52,7 +61,7 @@ metal::tests::test_device_construction_agrees_with_enumeration
 metal::tests::test_device_is_apple_silicon_follows_unified_memory
 metal::tests::test_device_properties
 metal::tests::test_device_vram_gb_converts_bytes
-metal::tests::test_devices_no_panic
+metal::tests::test_devices_reports_what_system_profiler_said
 metal::tests::test_dispatch_is_unimplemented
 metal::tests::test_is_available_consistent
 metal::tests::test_metal_buffer_accessors
@@ -80,7 +89,7 @@ neural_engine::tests::test_tensor_new_valid
 neural_engine::tests::test_tensor_zeros
 prop_capacity_formula_correct
 prop_capacity_used_percent_non_negative
-prop_capacity_zero_means_zero_percent
+prop_capacity_zero_means_no_percentage
 prop_error_clone_equals
 prop_error_code_iokit
 prop_error_code_none_for_others

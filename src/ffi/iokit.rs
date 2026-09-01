@@ -127,13 +127,18 @@ impl Drop for AfterburnerService {
 /// the range checks and documents the result for callers.
 #[derive(Debug, Clone, Default)]
 pub struct AfterburnerRawStats {
-    /// Active decode streams, or `0` if the property was absent.
+    /// Active decode streams. `None` if the property was absent.
     pub streams_active: Option<u32>,
-    /// Maximum concurrent stream capacity, or `23` if the property was absent.
+    /// Maximum concurrent stream capacity. `None` if the property was absent.
+    ///
+    /// This read `23` — Apple's marketed figure, and the constant named in
+    /// RUSTSEC-2026-0273 — when the property was missing. The type is now
+    /// `Option` and absence is `None`; the field doc said otherwise on the same
+    /// line as the type that contradicted it.
     pub streams_capacity: Option<u32>,
-    /// FPGA utilization as reported, unclamped; `0.0` if absent.
+    /// FPGA utilization as reported, unclamped. `None` if absent.
     pub utilization: Option<f64>,
-    /// Decode throughput in frames per second as reported, unclamped; `0.0` if
+    /// Decode throughput in frames per second as reported, unclamped. `None` if
     /// absent.
     pub throughput_fps: Option<f64>,
     /// FPGA temperature in Celsius as reported, unfiltered.

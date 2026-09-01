@@ -5,21 +5,60 @@
 
 use super::*;
 
+/// `devices()` must report what `system_profiler` said, and invent nothing.
+///
+/// This test previously asserted "on macOS, at least one device". That is a
+/// HARDWARE assumption wearing a PLATFORM assumption's clothes, and it is
+/// false: GitHub's macos-latest runner is a headless VM whose
+/// `system_profiler SPDisplaysDataType` names no GPU, and the assertion failed
+/// there the first time this crate's macOS lane ran in CI. Presence and
+/// reachability are different questions -- which is the whole subject of this
+/// release -- and "runs macOS" answers neither.
+///
+/// So the assertion is now the actual contract, and it is falsifiable on BOTH
+/// kinds of host:
+///   - a host whose system_profiler names a GPU must get a non-empty list
+///     (fails if `devices()` is replaced by `Vec::new()`)
+///   - a host whose system_profiler names none must get an EMPTY list
+///     (fails if `devices()` regains the fabricated "Apple GPU" fallback,
+///     which is the 0.2.0 defect)
 #[test]
-fn test_devices_no_panic() {
+fn test_devices_reports_what_system_profiler_said() {
     let devices = MetalCompute::devices();
-    // On macOS: at least one device
-    // On other platforms: empty
-    #[cfg(target_os = "macos")]
-    assert!(
-        !devices.is_empty(),
-        "Should have at least one Metal device on macOS"
-    );
+
     #[cfg(not(target_os = "macos"))]
     assert!(
         devices.is_empty(),
-        "Should have no Metal devices on non-macOS"
+        "no Metal enumeration exists off macOS; a device here would be invented"
     );
+
+    #[cfg(target_os = "macos")]
+    {
+        let named_a_gpu = system_profiler_named_a_gpu();
+        assert_eq!(
+            !devices.is_empty(),
+            named_a_gpu,
+            "devices() disagrees with system_profiler: it named {} GPU(s) but \
+             devices() returned {}",
+            if named_a_gpu { "at least one" } else { "no" },
+            devices.len()
+        );
+    }
+}
+
+/// Does this host's `system_profiler` actually name a GPU?
+///
+/// Runs the same command `detect_gpus_via_system_profiler` runs, and looks for
+/// the marker every GPU stanza carries. Used to decide what the tests above are
+/// entitled to assert on THIS machine, rather than assuming.
+#[cfg(target_os = "macos")]
+fn system_profiler_named_a_gpu() -> bool {
+    std::process::Command::new("system_profiler")
+        .args(["SPDisplaysDataType"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .is_some_and(|o| String::from_utf8_lossy(&o.stdout).contains("Chipset Model:"))
 }
 
 #[test]
@@ -161,7 +200,21 @@ fn test_detect_real_gpus() {
     // real detection failure and must be visible, not papered over with a
     // fabricated fallback device.
     let devices = MetalCompute::devices();
-    assert!(!devices.is_empty(), "Should detect at least one GPU");
+    if !system_profiler_named_a_gpu() {
+        // A headless host (GitHub's macOS runner is one) genuinely has no GPU
+        // to enumerate. The honest assertion there is that we invented none --
+        // and that is NOT vacuous: it fails against the fabricated fallback
+        // device this release removed.
+        assert!(
+            devices.is_empty(),
+            "system_profiler named no GPU, so any device here was invented: {devices:?}"
+        );
+        return;
+    }
+    assert!(
+        !devices.is_empty(),
+        "system_profiler named a GPU but devices() returned none"
+    );
 
     // Device name should be real, not stub
     let first = &devices[0];
@@ -190,10 +243,16 @@ fn test_detect_gpu_vram() {
     // `devices[0]` unguarded, so a macOS host with no enumerable GPU already
     // fails the suite.
     let devices = MetalCompute::devices();
+    if !system_profiler_named_a_gpu() {
+        assert!(
+            devices.is_empty(),
+            "system_profiler named no GPU, so any device here was invented"
+        );
+        return;
+    }
     assert!(
         !devices.is_empty(),
-        "no Metal device enumerated on macOS; detection failure must be \
-         visible, not skipped over"
+        "system_profiler named a GPU but devices() returned none"
     );
 
     let first = &devices[0];
@@ -237,6 +296,8 @@ fn sample_device(unified: bool, max_buffer: u64) -> MetalDevice {
         is_headless: false,
         max_threads_per_threadgroup: 1024,
         max_buffer_length: max_buffer,
+        // A hand-built device reports no measured VRAM: nothing read it.
+        reported_vram_bytes: None,
         has_unified_memory: unified,
         index: 0,
     }

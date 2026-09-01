@@ -29,6 +29,9 @@
 ///     is_headless: false,
 ///     max_threads_per_threadgroup: 1024,
 ///     max_buffer_length: 16 * 1024 * 1024 * 1024,
+///     // None: nothing read this figure. On a real M4 this is also None,
+///     // because system_profiler prints no VRAM line for unified memory.
+///     reported_vram_bytes: None,
 ///     has_unified_memory: true,
 ///     index: 0,
 /// };
@@ -79,10 +82,32 @@ pub struct MetalDevice {
     /// was built for `aarch64`, and 4 GiB otherwise. A fractional figure such
     /// as `1.5 GB` does not parse and takes the fallback.
     ///
-    /// The value alone does not tell you which of the two you got. It is not a
-    /// queried `maxBufferLength`, and nothing in manzana enforces it as a
-    /// limit.
+    /// It is not a queried `maxBufferLength`, and nothing in manzana enforces
+    /// it as a limit. To find out which of the two you got, read
+    /// [`reported_vram_bytes`](Self::reported_vram_bytes) — until 0.3.0 the
+    /// value alone did not tell you, and both shipped examples consequently
+    /// printed the fallback constant under the label "(from system_profiler)".
     pub max_buffer_length: u64,
+    /// The VRAM figure `system_profiler` actually printed, if it printed one.
+    ///
+    /// `Some(bytes)` when the report carried a `VRAM` line for this device that
+    /// parsed as a whole number of `GB` or `MB`. `None` when it carried none,
+    /// or one that did not parse — in which case
+    /// [`max_buffer_length`](Self::max_buffer_length) is manzana's hardcoded
+    /// default and describes no hardware.
+    ///
+    /// **`None` is the normal case on Apple Silicon**, which reports unified
+    /// memory and no VRAM line at all. So on an M-series Mac
+    /// `max_buffer_length` is the 16 GiB constant regardless of how much memory
+    /// the machine has, and this field is what says so.
+    ///
+    /// This field exists because provenance has to be representable before it
+    /// can be reported honestly. Both shipped examples labelled the fallback
+    /// "(from system_profiler)" and the README carried that output as a
+    /// captured M4 result — a crate constant presented as a hardware
+    /// measurement with a named source, which is the defect class
+    /// RUSTSEC-2026-0273 was filed over.
+    pub reported_vram_bytes: Option<u64>,
     /// Whether the chip has a unified memory architecture.
     ///
     /// **Derived:** `true` when [`name`](Self::name) contains `Apple` or the
@@ -139,6 +164,7 @@ impl MetalDevice {
     ///     is_headless: false,
     ///     max_threads_per_threadgroup: 1024,
     ///     max_buffer_length: 8 * 1024 * 1024 * 1024,
+    ///     reported_vram_bytes: Some(8 * 1024 * 1024 * 1024),
     ///     has_unified_memory: false,
     ///     index: 0,
     /// };

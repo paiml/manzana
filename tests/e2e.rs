@@ -224,18 +224,40 @@ fn e2e_platform_expectations() {
     }
 }
 
-/// On macOS, Metal enumeration is a genuinely implemented path, so it should
-/// actually find something. Failing here is a real finding, not a flake --
-/// it used to be masked by a fabricated fallback device.
+/// On macOS, Metal enumeration is a genuinely implemented path, so it must
+/// agree with what `system_profiler` actually reported on THIS host.
+///
+/// It must not assume a GPU exists. "Runs macOS" is not "has an enumerable
+/// display GPU" -- GitHub's macos-latest runner is a headless VM that has the
+/// first and not the second, and an earlier version of this assertion failed
+/// there the first time the macOS lane ran. Conflating a platform with the
+/// hardware attached to it is the same mistake as conflating presence with
+/// reachability, which is the subject of this whole release.
+///
+/// Falsifiable either way: on a host with a GPU it fails against an empty
+/// list, and on a headless host it fails against the fabricated fallback
+/// device this release removed.
 #[test]
 #[cfg(target_os = "macos")]
 fn e2e_macos_metal_enumeration_is_real() {
+    let reported = std::process::Command::new("system_profiler")
+        .args(["SPDisplaysDataType"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .is_some_and(|o| String::from_utf8_lossy(&o.stdout).contains("Chipset Model:"));
+
     let devices = MetalCompute::devices();
-    assert!(
+    assert_eq!(
         !devices.is_empty(),
-        "no Metal device found via system_profiler on macOS. Detection failure \
-         is no longer hidden behind a fabricated fallback device."
+        reported,
+        "devices() disagrees with system_profiler on this host: it named {} \
+         GPU(s), devices() returned {}. Neither an empty list on real hardware \
+         nor an invented device on a headless host is acceptable.",
+        if reported { "at least one" } else { "no" },
+        devices.len()
     );
+
     for d in &devices {
         assert!(d.max_threads_per_threadgroup > 0);
         assert!(d.max_buffer_length > 0);

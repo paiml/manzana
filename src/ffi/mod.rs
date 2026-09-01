@@ -66,11 +66,14 @@
 //! # No simulation
 //!
 //! Presence and statistics both come from live IOKit calls. Where a value
-//! cannot be obtained, the code returns `None` or an error. The one place a
-//! value is substituted rather than reported missing is
-//! `parse_afterburner_properties`, which fills in defaults for registry
-//! properties it does not find; that substitution is visible to callers
-//! through [`crate::afterburner::AfterburnerStats`], which documents it.
+//! cannot be obtained, the code returns `None` or an error. **Nothing is
+//! substituted.** `parse_afterburner_properties` reports every absent registry
+//! property as `None`, and `crate::afterburner` turns a missing required
+//! property into `Err` rather than a snapshot.
+//!
+//! Until 0.3.0 that was not so, and this section said so: it named
+//! `parse_afterburner_properties` as "the one place a value is substituted
+//! rather than reported missing".
 
 // Allow unsafe in this module only - quarantine zone
 #![allow(unsafe_code)]

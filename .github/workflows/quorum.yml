@@ -120,6 +120,11 @@ jobs:
       - name: Test census (G3)
         run: ./scripts/check_test_census.sh
 
+      # quorum.bats only -- quorum_satd.bats needs pmat, which is not
+      # installable here, and it runs in the `contracts` job under the same
+      # guard as the other pmat checks. Leaving it in this job made the entire
+      # anti-fabrication gate fail with exit 127 for a missing tool that has
+      # nothing to do with the gates it protects.
       - name: Quorum fixtures
         run: bats tests/quorum.bats
 
@@ -182,10 +187,19 @@ jobs:
         if: steps.tools.outputs.pmat == 'yes'
         run: pmat analyze satd --extended --fail-on-violation
 
+      # The pmat half of the quorum fixture suite. Same guard, same warning.
+      - name: Quorum SATD fixtures
+        if: steps.tools.outputs.pmat == 'yes'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq bats
+          bats tests/quorum_satd.bats
+
       - name: Report unrun checks
         if: steps.tools.outputs.pv != 'yes' || steps.tools.outputs.pmat != 'yes'
         run: |
-          echo "::warning::pv=${{ steps.tools.outputs.pv }} pmat=${{ steps.tools.outputs.pmat }} -- these checks did NOT run on this runner and are not evidence."
+          echo "::warning::pv=${{ steps.tools.outputs.pv }} pmat=${{ steps.tools.outputs.pmat }} -- so the pv contract validation, the extended-SATD check (MZNQ-005) and tests/quorum_satd.bats did NOT run on this runner. An unrun check is not evidence."
 
   # -------------------------------------------------------------------------
   # Aggregator.

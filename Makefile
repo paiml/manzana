@@ -113,7 +113,7 @@ quorum:
 	@echo "🧬 Gate mutation set (MZNQ-003, target 100%)..."
 	./scripts/mutate_reachability_gate.sh
 	@if command -v bats >/dev/null 2>&1; then \
-		echo "🧪 Quorum fixtures..."; bats tests/quorum.bats; \
+		echo "🧪 Quorum fixtures..."; bats tests/quorum.bats tests/quorum_satd.bats; \
 	else \
 		echo "❌ bats not installed; the fixture suite cannot be reported as passing."; \
 		echo "   Install: https://github.com/bats-core/bats-core"; \
