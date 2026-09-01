@@ -166,8 +166,12 @@ fn test_detect_real_gpus() {
     // Device name should be real, not stub
     let first = &devices[0];
     assert!(
-        !first.name.contains("Intel UHD"),
-        "Should detect real GPU, not stub. Got: {}",
+        // The fabricated fallback names, not an arbitrary vendor string. The
+        // old guard was `!name.contains("Intel UHD")`, which a device named
+        // "Apple GPU" or "Unknown GPU" passes -- so it did not guard against
+        // the fabrication it was written to catch.
+        first.name != "Apple GPU" && first.name != "Unknown GPU",
+        "detected the fabricated fallback device name, not a real GPU. Got: {}",
         first.name
     );
 }

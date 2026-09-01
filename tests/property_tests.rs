@@ -285,7 +285,6 @@ proptest! {
 
     // Property: Valid signature length (64-72 for P-256 DER)
 
-    // Property: the DER parser must never panic, on ANY input.
     //
     // parse_der_ecdsa_sig does raw indexing and slicing, and this crate sets
     // panic/unwrap/expect = "deny". A parser reachable from a public

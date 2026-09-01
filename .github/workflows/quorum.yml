@@ -15,9 +15,18 @@
 #    in `2>/dev/null || echo` and could not fail; that is precisely how the
 #    "MIRI-verified" claim survived. A gate that cannot fail is worth nothing.
 #
-#  * A MISSING TOOL IS A FAILURE, not a skip. If pmat/pv/bats are unavailable
-#    the job fails loudly rather than reporting green over an unrun check --
-#    zero checks passing must never look like all checks passing.
+#  * A MISSING TOOL IS A FAILURE **in the `gates` job**: bats is installed and
+#    its absence exits non-zero, because those gates are the ones that must
+#    never be skipped.
+#
+#    The `contracts` job is DIFFERENT and this is stated rather than glossed:
+#    pv and pmat are not installable on public runners, so those steps are
+#    `if:`-guarded and the job can go green having run only the build.rs
+#    binding check. An earlier version of this header claimed a missing tool
+#    always fails -- that was false of the contracts job, i.e. a false claim
+#    in the workflow enforcing a rule against false claims. The job emits a
+#    ::warning:: naming exactly which checks did NOT run, and the summary must
+#    repeat it: an unrun check is not evidence.
 #
 #  * The matrix runs Linux AND macOS. 26 of 163 tests were once
 #    `#[cfg(target_os = "macos")]`-gated, so on Linux they did not exist and

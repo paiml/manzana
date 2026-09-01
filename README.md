@@ -215,7 +215,7 @@ failures and could not fail. Both the target and the claim have been corrected.
 
 | Metric | Value |
 |--------|-------|
-| Tests | 126 on Linux; more on macOS, where platform-gated tests also run |
+| Tests | 154 on Linux, 163 on macOS arm64 (measured per host by `scripts/e2e_matrix.sh`) |
 | Clippy | 0 warnings (pedantic + nursery, `--all-targets`) |
 | Unsafe code | `src/ffi/iokit.rs` (real IOKit FFI) and `src/unified_memory.rs` |
 

@@ -27,7 +27,7 @@ spec = "docs/specifications/security-architecture-plan.md"
 paths = [
     "src/neural_engine/mod.rs",
     "src/metal/mod.rs",
-    "src/unified_memory.rs",
+    "src/unified_memory/mod.rs",
     "src/afterburner.rs",
     "src/ffi/iokit.rs",
 ]
@@ -75,7 +75,7 @@ compile_time_sound = [
 [owned_state_ops]
 functions = [
     # Writes into an allocation UmaBuffer::new obtained via alloc_zeroed.
-    "src/unified_memory.rs:copy_from_slice",
+    "src/unified_memory/mod.rs:copy_from_slice",
     # A pure value constructor: validates `data.len() == prod(shape)` and
     # builds a Tensor from its arguments alone. It claims no hardware, and it
     # is contract-bound under manzana-tensor-v1 with three falsification tests
@@ -121,7 +121,7 @@ crypto_surface_lines_removed = 798
 # here so it is not lost — stale self-description in a type name is still F10.
 [[known_misnomers]]
 symbol = "UmaBuffer"
-file = "src/unified_memory.rs"
+file = "src/unified_memory/mod.rs"
 claims = "unified CPU/GPU memory"
 actually = "page-aligned host allocation; not an MTLBuffer, not GPU-visible"
 target_version = "0.4.0"
