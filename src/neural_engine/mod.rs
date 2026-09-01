@@ -26,8 +26,13 @@
 //!
 //! # Falsification Claims
 //!
-//! - F031: ANE detected on Apple Silicon
-//! - F032: Returns None on Intel Mac
+//! - F031: [`NeuralEngineSession::is_available`] is `true` on an Apple Silicon
+//!   build and `false` otherwise. A compile-time `cfg`, not a probe.
+//! - F032: [`NeuralEngineSession::capabilities`] returns `None` — on EVERY
+//!   platform, Apple Silicon included. This read "Returns None on Intel Mac",
+//!   which implied it returned figures somewhere. It never does: capability
+//!   querying is not implemented, and manzana states no TOPS or core count for
+//!   any Apple part.
 
 use crate::error::{Error, Result};
 use std::path::Path;
@@ -130,9 +135,16 @@ impl Tensor {
     #[must_use]
     pub fn zeros(shape: Vec<usize>) -> Self {
         // Saturating rather than checked: `zeros` returns Self, not Result, so
-        // it has no channel to report overflow. Saturating turns a panic into
-        // an allocation failure, which is at least a real failure rather than a
-        // wrapped length. `new` is the checked constructor.
+        // it has no channel to report overflow.
+        //
+        // Be precise about what saturating buys, because an earlier version of
+        // this comment was not: it claimed saturation "turns a panic into an
+        // allocation failure", as though the second were not the first. In Rust
+        // a failed allocation of this size aborts or panics too. What saturating
+        // actually avoids is a WRAPPED length -- a `Vec` shorter than the shape
+        // claims, which is a silently wrong tensor rather than a loud failure.
+        // The process still dies on `[usize::MAX, 2]`; it just dies instead of
+        // lying. `new` is the checked constructor and returns `Err`.
         let len: usize = shape_product(&shape).unwrap_or(usize::MAX);
         Self {
             shape,

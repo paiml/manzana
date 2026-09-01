@@ -423,7 +423,7 @@ variants this crate actually produces:
 | `InvalidInput` | `Tensor::new` (length/shape mismatch, or a shape whose product overflows `usize`); `UmaBuffer::new` (zero length, over the 16 GiB maximum, or a length that overflows when page-aligned); `UmaBuffer::copy_from_slice` (source longer than the buffer); `NeuralEngineSession::load` (extension other than `.mlmodel`/`.mlmodelc`) |
 | `NotFound` | `MetalCompute::new` with a device index past the end of `devices()` |
 | `NotAvailable` | `MetalCompute::default_device` when no Metal device was enumerated |
-| `IoKit` | `AfterburnerMonitor::stats` when `IORegistryEntryCreateCFProperties` returns a non-`KERN_SUCCESS` code or a null dictionary. The `kern_return_t` is preserved and readable via `Error::error_code()` |
+| `IoKit` | `AfterburnerMonitor::stats` in three cases: `IORegistryEntryCreateCFProperties` returns a non-`KERN_SUCCESS` code; it succeeds but hands back a null dictionary; or the dictionary is readable but carries no `StreamsActive`, `StreamsCapacity`, `Utilization` or `ThroughputFPS`, in which case the message names the missing key. The first two preserve the `kern_return_t`, readable via `Error::error_code()`; the third uses code `0`. **The third case is new in 0.3.0** — before it, a missing key was silently defaulted, and this row listed only the first two |
 | `Internal` | `UmaBuffer::new` when the layout is rejected or the allocator returns null |
 
 `Error::Metal`, `Error::CoreMl`, `Error::Timeout`, and

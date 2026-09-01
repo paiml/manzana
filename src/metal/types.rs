@@ -7,11 +7,17 @@
 
 /// A GPU as reported by `system_profiler SPDisplaysDataType`.
 ///
-/// Only [`name`](Self::name) and, when the report supplies one,
-/// [`max_buffer_length`](Self::max_buffer_length) come from that report. The
-/// other six fields are constants, derivations from the name and the build
+/// Of the nine fields, three carry anything the report said:
+/// [`name`](Self::name), [`reported_vram_bytes`](Self::reported_vram_bytes)
+/// (`Some` only when the report printed a `VRAM` line that parsed), and
+/// [`max_buffer_length`](Self::max_buffer_length) when that field is `Some`.
+/// The remaining six are constants, derivations from the name and the build
 /// target, or positions in the enumeration; each field's documentation says
 /// which. Nothing here was queried from a Metal device.
+///
+/// The count above said "the other six fields" when there were nine, and it
+/// classified `reported_vram_bytes` — the field that exists precisely to record
+/// provenance — as though it had none.
 ///
 /// Every field is public and the struct is not `#[non_exhaustive]`, so callers
 /// can build one directly — which is how the crate's own tests exercise the
@@ -41,10 +47,13 @@
 /// ```
 #[derive(Debug, Clone)]
 pub struct MetalDevice {
-    /// Device name as `system_profiler` printed it, with the trailing `:`
-    /// removed.
+    /// The value `system_profiler` printed on the device's `Chipset Model:`
+    /// line, trimmed.
     ///
-    /// The one field read verbatim from the report.
+    /// Read verbatim from the report. The description here used to say "with
+    /// the trailing `:` removed", which described the blacklist parser this
+    /// release deleted: that one treated any line ending in `:` as a device
+    /// name, and so invented devices called `Software` from unrelated stanzas.
     pub name: String,
     /// The device's position in the enumeration, plus one.
     ///

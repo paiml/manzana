@@ -5,7 +5,40 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.0] — unreleased
+## [0.3.1] — 2026-09-01
+
+### Fixed
+
+Documentation only. No code behaviour changes, no API changes. Every item
+here is a doc that described behaviour the code does not have — the same
+defect class 0.3.0 was released to remove, found by continuing to review the
+published artifact after it shipped.
+
+- `AfterburnerService::get_stats`'s `# Errors` still said a registry missing
+  every property "parses into `AfterburnerRawStats` fallbacks rather than an
+  error". That was the **seventh** copy of the defaulting claim; 0.3.0
+  corrected six and missed this one. Absent properties are `None` here, and
+  `crate::afterburner` turns a `None` in a required field into `Err`.
+- `MetalDevice`'s type doc said "the other six fields" when the struct has
+  **nine**, and classified `reported_vram_bytes` — the field 0.3.0 added
+  precisely to record provenance — as though it carried none.
+- `MetalDevice::name` was documented as the report line "with the trailing `:`
+  removed". That describes the blacklist parser 0.3.0 deleted, the one that
+  invented devices called `Software`. It is the value of the `Chipset Model:`
+  line, trimmed.
+- The `neural_engine` falsification claim F032 read "Returns None on Intel
+  Mac", implying `capabilities()` returns figures somewhere. It returns `None`
+  on every platform, Apple Silicon included.
+- `Tensor::zeros`'s comment claimed saturation "turns a panic into an
+  allocation failure". In Rust a failed allocation of that size aborts or
+  panics too, so that sentence distinguished nothing. What saturating actually
+  avoids is a **wrapped** length: a `Vec` shorter than the shape claims, which
+  is a silently wrong tensor rather than a loud failure. The process still
+  dies; it just dies instead of lying.
+- The README's `Error` table listed only two `IoKit` cases and omitted the
+  missing-property error `stats()` began returning in 0.3.0.
+
+## [0.3.0] — 2026-09-01
 
 ### Security
 
