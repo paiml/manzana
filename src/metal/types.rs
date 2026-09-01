@@ -91,11 +91,11 @@ pub struct MetalDevice {
     ///
     /// This is a claim about the hardware, not about manzana. It does not mean
     /// this crate can give you a GPU-visible buffer; it cannot. See the
-    /// module's [Unified memory](self#unified-memory) section.
+    /// module's [Unified memory](crate::metal#unified-memory) section.
     pub has_unified_memory: bool,
-    /// Position in the vector returned by [`MetalCompute::devices`].
+    /// Position in the vector returned by [`MetalCompute::devices`](crate::MetalCompute::devices).
     ///
-    /// The value to pass to [`MetalCompute::new`]. Valid only for the list this
+    /// The value to pass to [`MetalCompute::new`](crate::MetalCompute::new). Valid only for the list this
     /// device came from — `devices()` re-enumerates on every call.
     pub index: usize,
 }
@@ -157,7 +157,7 @@ impl MetalDevice {
 /// A handle to a compiled Metal shader.
 ///
 /// No value of this type can be obtained through the public API.
-/// [`MetalCompute::compile_shader`] is the only function that returns one, and
+/// [`MetalCompute::compile_shader`](crate::MetalCompute::compile_shader) is the only function that returns one, and
 /// it always fails. The type exists so the signature a real Metal backend would
 /// fill in is already in place.
 #[derive(Debug)]
@@ -181,7 +181,7 @@ impl CompiledShader {
 ///
 /// Holds a length and a device index. It owns no memory, on the GPU or
 /// anywhere else. No value of this type can be obtained through the public API:
-/// [`MetalCompute::allocate_buffer`] is the only function that returns one, and
+/// [`MetalCompute::allocate_buffer`](crate::MetalCompute::allocate_buffer) is the only function that returns one, and
 /// it always fails.
 ///
 /// For an allocation that does exist, see [`crate::unified_memory::UmaBuffer`]

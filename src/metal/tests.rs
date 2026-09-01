@@ -179,17 +179,31 @@ fn test_detect_real_gpus() {
 #[test]
 #[cfg(target_os = "macos")]
 fn test_detect_gpu_vram() {
+    // The `if !devices.is_empty()` guard this test used to carry made it
+    // VACUOUS: replace `MetalCompute::devices()` with `Vec::new()` and the
+    // body never runs, so the test passes green over a constant. That is the
+    // F3 shape -- a test that cannot fail is not evidence -- and it is the
+    // shape that let 0.2.0's fabrications through a green suite.
+    //
+    // Asserting non-emptiness here adds no CI risk that
+    // `test_detect_real_gpus` does not already carry: that test indexes
+    // `devices[0]` unguarded, so a macOS host with no enumerable GPU already
+    // fails the suite.
     let devices = MetalCompute::devices();
-    if !devices.is_empty() {
-        // Real GPUs should report VRAM
-        let first = &devices[0];
-        // Mac Pro AMD GPUs have 16GB, Apple Silicon has unified memory
-        assert!(
-            first.vram_gb() >= 1.0,
-            "GPU should report at least 1GB VRAM, got: {} GB",
-            first.vram_gb()
-        );
-    }
+    assert!(
+        !devices.is_empty(),
+        "no Metal device enumerated on macOS; detection failure must be \
+         visible, not skipped over"
+    );
+
+    let first = &devices[0];
+    // Mac Pro AMD GPUs report 16 GiB; Apple Silicon reports unified memory.
+    // Either way a real device reports at least 1 GiB.
+    assert!(
+        first.vram_gb() >= 1.0,
+        "GPU should report at least 1 GiB VRAM, got: {} GiB",
+        first.vram_gb()
+    );
 }
 
 #[test]

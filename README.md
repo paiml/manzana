@@ -82,8 +82,10 @@ Caveats on the Afterburner rows, because no host in the project's end-to-end
 matrix (`scripts/e2e_matrix.sh`: one Linux x86_64 host, one Apple M4) has the
 card:
 
-- A registry key that is absent reads as `0` — and as `23` for
-  `streams_capacity` — which is indistinguishable from an idle card.
+- A registry key that is absent is an error: `stats()` returns `Err`, so no
+  snapshot with a stand-in value in it ever reaches you. Until 0.3.0 an absent
+  `StreamsCapacity` read as `23` — Apple's marketed figure — indistinguishable
+  from an idle card.
 - `AfterburnerStats::codec_breakdown` is always an empty map. Nothing populates
   it.
 
@@ -96,7 +98,7 @@ card:
 | Metal compute dispatch | `MetalCompute::dispatch` | `Error::Unimplemented` — "compute dispatch (requires MTLCommandBuffer/MTLComputeCommandEncoder)" |
 | CoreML model loading | `NeuralEngineSession::load` | `Error::Unimplemented` — "CoreML model loading (requires MLModel compileModelAtURL)". A path whose extension is not `.mlmodel` or `.mlmodelc` gets `Error::InvalidInput` first |
 | CoreML inference | `NeuralEngineSession::infer` | `Error::Unimplemented` — "inference (requires CoreML MLModel prediction)" |
-| ANE capability query (TOPS, cores) | `NeuralEngineSession::capabilities` | Returns `None`, not an error |
+| ANE capability query (TOPS, cores) | `NeuralEngineSession::capabilities` | Returns `None`, not an error. There is no `Default` on `AneCapabilities`, so `capabilities().unwrap_or_default()` does not compile — it used to hand back the M1's published figures on any machine |
 | GPU-visible (zero-copy) memory | `UmaBuffer::is_uma_available` | Returns `false`, not an error. No `MTLBuffer`, `IOSurface`, or Metal call exists anywhere in the crate |
 | Cryptography of any kind | — | Removed in 0.3.0 |
 
@@ -418,8 +420,8 @@ the buffer initialized before any reference to it can exist.
 
 | Metric | Value |
 |---|---|
-| Tests | 201 on Linux, 208 on macOS arm64, plus 60 doctests on each. 0 ignored on both |
-| Line coverage | 95.82%, against a 95% floor enforced by `make coverage-gate` |
+| Tests | 205 on Linux, 212 on macOS arm64, plus 62 doctests on each. 0 ignored on both |
+| Line coverage | 95.78%, against a 95% floor enforced by `make coverage-gate` |
 | Clippy | 0 warnings with `pedantic` + `nursery` on `--all-targets --all-features` |
 | Unsafe code | `src/ffi/iokit.rs`, `src/unified_memory/mod.rs` |
 

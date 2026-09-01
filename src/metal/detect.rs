@@ -58,7 +58,9 @@ pub(super) fn detect_gpus_via_system_profiler() -> Vec<MetalDevice> {
                 let vram_str = vram_str.trim();
                 if let Some(gb_pos) = vram_str.find(" GB") {
                     if let Ok(gb) = vram_str[..gb_pos].trim().parse::<u64>() {
-                        current_vram = gb * 1_073_741_824; // Convert GB to bytes
+                        // system_profiler prints "GB" but Apple means GiB, so
+                        // the multiplier is 2^30, not 10^9.
+                        current_vram = gb * 1_073_741_824;
                     }
                 } else if let Some(mb_pos) = vram_str.find(" MB") {
                     if let Ok(mb) = vram_str[..mb_pos].trim().parse::<u64>() {
@@ -95,9 +97,9 @@ fn create_device(name: &str, vram_bytes: u64, index: usize) -> MetalDevice {
         max_buffer_length: if vram_bytes > 0 {
             vram_bytes
         } else if is_apple_silicon {
-            17_179_869_184 // 16 GB default for Apple Silicon
+            17_179_869_184 // 16 GiB default for Apple Silicon
         } else {
-            4_294_967_296 // 4 GB default
+            4_294_967_296 // 4 GiB default
         },
         has_unified_memory: is_apple_silicon,
         index,
@@ -107,7 +109,7 @@ fn create_device(name: &str, vram_bytes: u64, index: usize) -> MetalDevice {
 /// Returns no devices when detection fails.
 ///
 /// Earlier versions fabricated a plausible `MetalDevice` here — named
-/// "Apple GPU", reporting 1024 threads per threadgroup and a 4 GB maximum
+/// "Apple GPU", reporting 1024 threads per threadgroup and a 4 GiB maximum
 /// buffer — whenever `system_profiler` was unavailable. That invented a
 /// GPU on machines that have no Metal at all. An empty device list is the
 /// honest answer to "detection did not work".

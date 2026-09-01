@@ -35,21 +35,49 @@ fn test_capabilities_never_fabricates_device_specs() {
 }
 
 #[test]
-fn test_capabilities_legacy_shape_still_available_as_placeholder() {
-    // AneCapabilities::default() remains for callers who explicitly want
-    // the documented M1 baseline. That is fine: they asked for a constant.
-    let baseline = AneCapabilities::default();
+fn test_m1_baseline_is_available_when_named() {
+    // The published M1 figures remain reachable for a caller who explicitly
+    // asks for them. That is fine: the constructor's name says whose numbers
+    // these are, so nobody receives them by accident.
+    let baseline = AneCapabilities::m1_baseline();
     assert!((baseline.tops - 15.8).abs() < f64::EPSILON);
     assert_eq!(baseline.chip_generation, "Unknown");
 }
 
 #[test]
-fn test_capabilities_default_values() {
-    let caps = AneCapabilities::default();
+fn test_m1_baseline_values() {
+    let caps = AneCapabilities::m1_baseline();
     assert!(caps.tops > 0.0);
     assert!(caps.max_batch_size > 0);
     assert!(!caps.supported_ops.is_empty());
     assert!(caps.core_count > 0);
+}
+
+/// The M1 figures must not be reachable without naming them.
+///
+/// `capabilities()` returns `Option`, so an `impl Default for AneCapabilities`
+/// makes `capabilities().unwrap_or_default()` -- an unremarkable line of Rust
+/// -- yield "15.8 TOPS, 16 cores" on any machine, including one with no Apple
+/// silicon in it. Demonstrated on x86_64 Linux before this was removed.
+///
+/// This test is a NAMING assertion, and that is a weak instrument: it fails if
+/// someone adds `impl Default` AND a `default()`-shaped constructor, but a
+/// bare `impl Default` would be caught by the compiler breaking this file's
+/// sibling tests, not by an assertion here. The real guard is that
+/// `AneCapabilities` has no `Default` impl to reach; this records why.
+#[test]
+fn test_no_default_hands_out_hardware_figures() {
+    let named = AneCapabilities::m1_baseline();
+    assert!(
+        (named.tops - 15.8).abs() < f64::EPSILON,
+        "the M1 figures must live behind a constructor that names them"
+    );
+    // capabilities() must still refuse; the placeholder above is not a
+    // fallback for it.
+    assert!(
+        NeuralEngineSession::capabilities().is_none(),
+        "a named placeholder must not become capabilities()'s answer"
+    );
 }
 
 #[test]

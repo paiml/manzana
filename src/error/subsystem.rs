@@ -2,9 +2,9 @@
 
 use std::fmt;
 
-/// The hardware subsystem an [`enum@Error`] refers to.
+/// The hardware subsystem an [`Error`](crate::Error) refers to.
 ///
-/// Carried by [`Error::NotAvailable`] and [`Error::Unimplemented`] so a caller
+/// Carried by [`Error::NotAvailable`](crate::Error::NotAvailable) and [`Error::Unimplemented`](crate::Error::Unimplemented) so a caller
 /// can tell which accelerator a refusal concerns.
 ///
 /// ```
@@ -23,8 +23,8 @@ pub enum Subsystem {
     /// Unified memory. Displays as "Unified Memory".
     ///
     /// No error produced by manzana 0.3.0 carries this subsystem;
-    /// `unified_memory` reports its failures as [`Error::InvalidInput`] or
-    /// [`Error::Internal`].
+    /// `unified_memory` reports its failures as [`Error::InvalidInput`](crate::Error::InvalidInput) or
+    /// [`Error::Internal`](crate::Error::Internal).
     UnifiedMemory,
 }
 

@@ -82,7 +82,7 @@ pub const PAGE_SIZE: usize = 4096;
 /// Round `len` up to a [`PAGE_SIZE`] boundary, or `None` if that overflows.
 ///
 /// Extracted so it can be tested directly. Testing it through
-/// [`UmaBuffer::new`] is VACUOUS on 64-bit targets: `MAX_ALLOCATION` is 16 GB
+/// [`UmaBuffer::new`] is VACUOUS on 64-bit targets: `MAX_ALLOCATION` is 16 GiB
 /// there, so every input that would wrap is rejected by the bounds check
 /// before alignment runs, and a test written that way passes against the
 /// wrapping implementation too. On 32-bit, `MAX_ALLOCATION` is `usize::MAX`
@@ -94,8 +94,8 @@ const fn page_align(len: usize) -> Option<usize> {
     }
 }
 
-/// Largest `len` [`UmaBuffer::new`] accepts: 16 GB, or `usize::MAX` on targets
-/// too small to express 16 GB.
+/// Largest `len` [`UmaBuffer::new`] accepts: 16 GiB (17_179_869_184 bytes), or
+/// `usize::MAX` on targets too small to express 16 GiB.
 ///
 /// This is a policy limit chosen by this crate, not a query of available
 /// memory. An allocation below it can still fail.
@@ -118,7 +118,7 @@ pub const MAX_ALLOCATION: usize = {
     // `cargo check --target i686-unknown-linux-gnu` fails with "can't find
     // crate for std". This form has no oversized literal on any target, but
     // that is reasoning, not a passing build.
-    const WANT: u64 = 17_179_869_184; // 16 GB
+    const WANT: u64 = 17_179_869_184; // 16 GiB, i.e. 2^34
     if WANT <= usize::MAX as u64 {
         WANT as usize
     } else {

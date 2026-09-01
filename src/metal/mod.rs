@@ -44,7 +44,8 @@
 //! // Empty off macOS; on macOS, whatever `system_profiler` reported.
 //! let devices = MetalCompute::devices();
 //! for device in &devices {
-//!     println!("{}: {:.1} GB", device.name, device.vram_gb());
+//!     // vram_gb divides by 2^30; the unit is GiB despite the name.
+//!     println!("{}: {:.1} GiB", device.name, device.vram_gb());
 //! }
 //! assert_eq!(MetalCompute::is_available(), !devices.is_empty());
 //! ```

@@ -44,6 +44,53 @@ The same pattern existed outside the module named in the advisory:
 
 ### Fixed
 
+- **The removed fabrications came back through `Default`.** Both of the
+  constants deleted from the hardware paths were still reachable from safe
+  public API, and by an idiomatic line of Rust rather than an obscure one.
+  Found in the pre-publish artifact review, demonstrated on x86_64 Linux with
+  no Apple hardware present:
+  - `NeuralEngineSession::capabilities()` returns `Option`, so
+    `capabilities().unwrap_or_default()` yielded `AneCapabilities::default()` —
+    the M1's published 15.8 TOPS and 16 cores — on any machine at all. That is
+    the exact figure the advisory names, restored by a trait impl after being
+    removed from `capabilities()` itself. `impl Default for AneCapabilities` is
+    gone; the figures live behind `AneCapabilities::m1_baseline()`, whose name
+    says whose chip they describe. The old call no longer compiles (E0277).
+  - `AfterburnerMonitor::stats()` returns `Result`, so
+    `stats().unwrap_or_default()` yielded `streams_capacity: 23` — Apple's
+    marketed "23 streams of 4K ProRes" — plus zero streams and zero
+    utilisation: a complete, plausible idle-card reading on a machine with no
+    card. `AfterburnerStats::default()` is now all-zero, and `0` capacity is
+    not a card anyone can mistake for a measurement.
+  `[V]` `cargo test test_default_does_not_reconstitute_the_marketed_capacity`
+  — RED against the previous impl (`left: 23, right: 0`)
+- **`AfterburnerStats`'s rustdoc still described the fabricating behaviour as
+  current.** It stated that an absent registry property "is silently replaced
+  by the default shown below", tabulated `23` as that default, and told the
+  reader "there is no way to tell a defaulted field from a genuine reading" —
+  all false since `convert_raw_stats` began returning `Err`. The doc survived
+  the fix it documents. Corrected, with the old behaviour kept and labelled as
+  history. Same for `is_active()`'s note about defaulted snapshots.
+- **A vacuous test.** `metal::tests::test_detect_gpu_vram` wrapped its whole
+  body in `if !devices.is_empty()`, so replacing `MetalCompute::devices()` with
+  `Vec::new()` left it passing green having asserted nothing. Guard removed;
+  it now asserts enumeration succeeded, which its unguarded sibling
+  `test_detect_real_gpus` already required.
+- **Unit labels.** `17_179_869_184` is 16 GiB, not 16 GB, and was documented as
+  "GB" in five places while `vram_gb()` divides by 2^30. `system_profiler`
+  prints "GB" meaning GiB, and the crate now says so where it parses it.
+- **Doctest identities in the census gate** were keyed by source line number,
+  so any edit above a doctest reported it as removed-and-re-added. One
+  docs-only pass produced 7 spurious removals and 20 spurious additions — and a
+  genuinely deleted doctest would have been invisible in that noise, defeating
+  the gate's name-set assertion exactly when it was needed. Keys are now
+  line-independent.
+  `[V]` inserting a line above a doctest produces no census churn; converting a
+  doctest to ```` ```text ```` is still reported as a removal
+- The published crate shipped `contracts/.pv/cache/lint/*.json` — cached `pv`
+  verdicts computed on the author's machine, travelling inside the artifact for
+  an auditor to be served instead of recomputing. Excluded.
+
 - **Soundness (UB):** `UmaBuffer::new` allocated with `alloc()`, leaving the
   buffer uninitialized, while the safe methods `as_slice`/`as_mut_slice` built
   a `&[u8]` over it. Constructing a reference to uninitialized memory is

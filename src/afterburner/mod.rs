@@ -7,7 +7,7 @@
 //! Both paths go through real IOKit calls in the crate's FFI layer:
 //! `IOServiceGetMatchingService` for presence, `IORegistryEntryCreateCFProperties`
 //! for statistics. Nothing here is simulated, and nothing here returns
-//! [`Error::Unimplemented`](crate::Error::Unimplemented) — this is the one
+//! [`Error::Unimplemented`] — this is the one
 //! hardware subsystem in manzana whose advertised operations are implemented.
 //!
 //! The module is observe-only. There is no API to configure the card, submit
@@ -160,11 +160,11 @@ impl AfterburnerMonitor {
     ///
     /// # Errors
     ///
-    /// - [`Error::IoKit`](crate::Error::IoKit) if
+    /// - [`Error::IoKit`] if
     ///   `IORegistryEntryCreateCFProperties` returns anything other than
     ///   `KERN_SUCCESS`. [`error_code`](crate::Error::error_code) carries the
     ///   `kern_return_t`.
-    /// - [`Error::IoKit`](crate::Error::IoKit) with code `0` if that call
+    /// - [`Error::IoKit`] with code `0` if that call
     ///   succeeds but hands back a null dictionary.
     ///
     /// Nothing else fails. In particular, a registry that contains none of the
@@ -197,13 +197,14 @@ impl AfterburnerMonitor {
     /// read. If you want other fields as well, call [`stats`](Self::stats)
     /// once and inspect the snapshot.
     ///
-    /// Note that a defaulted snapshot — see [`AfterburnerStats`] — reports
-    /// `false` here, so `Ok(false)` means "no active streams were read", not
-    /// "the card confirmed it is idle".
+    /// `Ok(false)` now means the card reported zero active streams. It no
+    /// longer means "the registry key was missing and the field defaulted to
+    /// zero": since 0.3.0 a missing `StreamsActive` makes [`stats`](Self::stats)
+    /// return `Err`, so there is no defaulted snapshot for this to read.
     ///
     /// # Errors
     ///
-    /// The same [`Error::IoKit`](crate::Error::IoKit) cases as
+    /// The same [`Error::IoKit`] cases as
     /// [`stats`](Self::stats).
     ///
     /// # Example

@@ -83,10 +83,32 @@ pub struct AneCapabilities {
     pub core_count: u32,
 }
 
-impl Default for AneCapabilities {
-    fn default() -> Self {
+impl AneCapabilities {
+    /// Apple's **published** figures for the M1: 15.8 TOPS, 16 cores.
+    ///
+    /// Specification numbers for one chip, not a measurement of the machine
+    /// you are on, and wrong on any part that is not an M1.
+    ///
+    /// There is deliberately no `impl Default for AneCapabilities`: since
+    /// [`NeuralEngineSession::capabilities`] returns `Option`,
+    /// `capabilities().unwrap_or_default()` would hand these figures to a
+    /// caller who never asked for them -- on any machine at all. That is the
+    /// fabrication RUSTSEC-2026-0273 names, re-entering through a trait impl.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use manzana::AneCapabilities;
+    ///
+    /// let m1 = AneCapabilities::m1_baseline();
+    /// assert!((m1.tops - 15.8).abs() < f64::EPSILON);
+    /// assert_eq!(m1.core_count, 16);
+    /// assert_eq!(m1.chip_generation, "Unknown");
+    /// ```
+    #[must_use]
+    pub fn m1_baseline() -> Self {
         Self {
-            tops: 15.8, // M1 baseline
+            tops: 15.8,
             max_batch_size: 32,
             supported_ops: vec![
                 AneOp::Convolution,
@@ -113,6 +135,17 @@ pub struct Tensor {
     pub data: Vec<f32>,
 }
 
+/// Product of `shape`, or `None` if it overflows `usize`.
+///
+/// Checked, not `product()`. `shape.iter().product::<usize>()` PANICS in debug
+/// (this crate denies panics in safe public API) and silently WRAPS in release,
+/// so a length check against it could admit a `Tensor` whose shape misdescribes
+/// its own contents. Named by the manzana-tensor-v1 obligation "new() never
+/// panics, including on shape products that overflow".
+fn shape_product(shape: &[usize]) -> Option<usize> {
+    shape.iter().try_fold(1usize, |acc, &d| acc.checked_mul(d))
+}
+
 impl Tensor {
     /// Create a new tensor with the given shape and data.
     ///
@@ -121,19 +154,9 @@ impl Tensor {
     /// Returns an error if data length doesn't match shape.
     #[provable_contracts_macros::contract("manzana-tensor-v1", equation = "new")]
     pub fn new(shape: Vec<usize>, data: Vec<f32>) -> Result<Self> {
-        // Checked, not `product()`. `shape.iter().product::<usize>()` overflows
-        // for e.g. [usize::MAX, 2]: it PANICS in debug (this crate sets
-        // panic = "deny", and the constructor is safe and public) and silently
-        // WRAPS in release, so the length check below would compare against a
-        // wrapped value and could admit a Tensor whose shape misdescribes its
-        // own contents. Found by the manzana-tensor-v1 contract obligation
-        // "new() never panics, including on shape products that overflow".
-        let expected_len = shape
-            .iter()
-            .try_fold(1usize, |acc, &d| acc.checked_mul(d))
-            .ok_or_else(|| {
-                Error::invalid_input(format!("shape {shape:?} overflows usize when multiplied"))
-            })?;
+        let expected_len = shape_product(&shape).ok_or_else(|| {
+            Error::invalid_input(format!("shape {shape:?} overflows usize when multiplied"))
+        })?;
         if data.len() != expected_len {
             return Err(Error::invalid_input(format!(
                 "data length {} doesn't match shape {shape:?} (expected {expected_len})",
@@ -150,26 +173,31 @@ impl Tensor {
         // it has no channel to report overflow. Saturating turns a panic into
         // an allocation failure, which is at least a real failure rather than a
         // wrapped length. `new` is the checked constructor.
-        let len: usize = shape
-            .iter()
-            .try_fold(1usize, |acc, &d| acc.checked_mul(d))
-            .unwrap_or(usize::MAX);
+        let len: usize = shape_product(&shape).unwrap_or(usize::MAX);
         Self {
             shape,
             data: vec![0.0; len],
         }
     }
 
-    /// Get the total number of elements.
+    /// The product of [`shape`](Self::shape), **saturating** at `usize::MAX`.
+    ///
+    /// For any `Tensor` this crate hands you it equals `data.len()`:
+    /// [`Tensor::new`] rejects an overflowing shape. It can still saturate,
+    /// because the fields are public and you may build a `Tensor` whose shape
+    /// does not describe its data -- there `usize::MAX` is a saturation
+    /// marker, not a count.
+    ///
+    /// ```
+    /// use manzana::Tensor;
+    ///
+    /// let bogus = Tensor { shape: vec![usize::MAX, 2], data: vec![] };
+    /// assert_eq!(bogus.numel(), usize::MAX);
+    /// assert_eq!(bogus.data.len(), 0);
+    /// ```
     #[must_use]
     pub fn numel(&self) -> usize {
-        // Cannot overflow for a Tensor built by `new`, which rejects shapes
-        // whose product does. Checked anyway: `zeros` saturates, and a future
-        // constructor must not turn this accessor into a panic.
-        self.shape
-            .iter()
-            .try_fold(1usize, |acc, &d| acc.checked_mul(d))
-            .unwrap_or(usize::MAX)
+        shape_product(&self.shape).unwrap_or(usize::MAX)
     }
 
     /// Get the number of dimensions.
@@ -239,15 +267,17 @@ impl NeuralEngineSession {
     /// **Always returns `None` in this release.** Capability querying is not
     /// implemented.
     ///
-    /// Earlier versions returned [`AneCapabilities::default`] — the M1
-    /// baseline of 15.8 TOPS and 16 cores — on *every* Apple Silicon machine,
-    /// with `chip_generation` left as the literal string `"Unknown"`. Those
-    /// were published specification figures for one chip, presented as though
-    /// they had been read from the device in front of the caller. A program
-    /// sizing a workload from them would be wrong on every chip but an M1.
+    /// Earlier versions returned the M1 baseline of 15.8 TOPS and 16 cores on
+    /// *every* Apple Silicon machine, with `chip_generation` left as the
+    /// literal string `"Unknown"`. Those were published specification figures
+    /// for one chip, presented as though they had been read from the device in
+    /// front of the caller. A program sizing a workload from them would be
+    /// wrong on every chip but an M1.
     ///
-    /// [`AneCapabilities::default`] remains available for callers who
-    /// deliberately want the documented M1 baseline as a placeholder.
+    /// Because this returns `Option`, there is deliberately no `Default` on
+    /// [`AneCapabilities`] for `unwrap_or_default()` to reach. If you want the
+    /// published M1 numbers as a placeholder, name them:
+    /// [`AneCapabilities::m1_baseline`].
     #[must_use]
     #[allow(clippy::missing_const_for_fn)]
     pub fn capabilities() -> Option<AneCapabilities> {

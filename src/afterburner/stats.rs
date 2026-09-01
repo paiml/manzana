@@ -56,29 +56,35 @@ impl fmt::Display for ProResCodec {
 
 /// A snapshot of Afterburner FPGA statistics.
 ///
-/// Returned by [`AfterburnerMonitor::stats`], which builds it from a single
+/// Returned by [`AfterburnerMonitor::stats`](crate::afterburner::AfterburnerMonitor::stats), which builds it from a single
 /// read of the card's IOKit registry entry. The value is a plain owned struct;
 /// it does not update itself, and holding it does not hold the IOKit service
 /// open. Call `stats()` again for a fresh reading.
 ///
 /// # How each field is produced
 ///
-/// Every field comes from one IOKit registry property, and **a property that
-/// is absent, or is not a `CFNumber`, is silently replaced by the default
-/// shown below**. There is no way to tell a defaulted field from a genuine
-/// reading, so on an untested registry layout the whole struct reads as an
-/// idle card. Values that are present are then range-checked, and a reading
+/// Every field comes from one IOKit registry property. A property that is
+/// absent, or is not a `CFNumber`, is **an error**: [`AfterburnerMonitor::stats`](crate::afterburner::AfterburnerMonitor::stats)
+/// returns `Err` rather than a snapshot with a stand-in value in it. So every
+/// non-`Option` field of a value you receive from `stats()` was read from the
+/// device. Values that are present are then range-checked, and a reading
 /// outside the plausible range is discarded rather than reported.
 ///
-/// | Field | Default when absent | Range check applied |
-/// |-------|--------------------|---------------------|
-/// | `streams_active` | `0` | none |
-/// | `streams_capacity` | `23` (hardcoded, never read from the device in this case) | none |
-/// | `utilization_percent` | `0.0` | clamped into `0.0..=100.0` |
-/// | `throughput_fps` | `0.0` | negative values raised to `0.0` |
+/// | Field | Absent from the registry | Range check applied |
+/// |-------|--------------------------|---------------------|
+/// | `streams_active` | `stats()` returns `Err` | none |
+/// | `streams_capacity` | `stats()` returns `Err` | none |
+/// | `utilization_percent` | `stats()` returns `Err` | clamped into `0.0..=100.0` |
+/// | `throughput_fps` | `stats()` returns `Err` | negative values raised to `0.0` |
 /// | `temperature_celsius` | `None` | outside `0.0..150.0` becomes `None` |
 /// | `power_watts` | `None` | outside `0.0..500.0` becomes `None` |
 /// | `codec_breakdown` | always empty | — |
+///
+/// Until 0.3.0 this was not so: a missing `StreamsCapacity` was silently
+/// replaced by `23` -- the figure Apple markets for the card -- and there was
+/// no way to tell that stand-in from a genuine reading. That is the defect
+/// RUSTSEC-2026-0273 was filed over. The paragraph above is the current
+/// behaviour; this one is history.
 ///
 /// # Example
 ///
@@ -97,21 +103,27 @@ impl fmt::Display for ProResCodec {
 pub struct AfterburnerStats {
     /// Number of decode streams the card reported as active.
     ///
-    /// `0` if the registry did not report a stream count.
+    /// In a value from [`AfterburnerMonitor::stats`](crate::afterburner::AfterburnerMonitor::stats) this was read from the
+    /// registry; if the key was absent, `stats()` returned `Err` and you have
+    /// no value at all.
     pub streams_active: u32,
     /// Maximum concurrent stream capacity the card reported.
     ///
-    /// `23` if the registry did not report a capacity. That fallback is a
-    /// constant in this crate, not a measurement, and it is indistinguishable
-    /// here from a genuine reading of 23.
+    /// In a value from [`AfterburnerMonitor::stats`](crate::afterburner::AfterburnerMonitor::stats) this was read from the
+    /// registry; if the key was absent, `stats()` returned `Err`.
+    ///
+    /// Before 0.3.0 an absent key produced `23` -- a constant in this crate,
+    /// not a measurement, and indistinguishable from a genuine reading of 23.
     pub streams_capacity: u32,
     /// FPGA utilization, clamped into `0.0..=100.0`.
     ///
-    /// `0.0` if the registry did not report utilization.
+    /// In a value from [`AfterburnerMonitor::stats`](crate::afterburner::AfterburnerMonitor::stats) this was read from the
+    /// registry; if the key was absent, `stats()` returned `Err`.
     pub utilization_percent: f64,
     /// Decode throughput in frames per second, floored at `0.0`.
     ///
-    /// `0.0` if the registry did not report throughput.
+    /// In a value from [`AfterburnerMonitor::stats`](crate::afterburner::AfterburnerMonitor::stats) this was read from the
+    /// registry; if the key was absent, `stats()` returned `Err`.
     pub throughput_fps: f64,
     /// FPGA temperature in Celsius.
     ///
@@ -125,7 +137,7 @@ pub struct AfterburnerStats {
     pub power_watts: Option<f64>,
     /// Active streams broken down by codec.
     ///
-    /// Always empty in a value produced by [`AfterburnerMonitor::stats`]:
+    /// Always empty in a value produced by [`AfterburnerMonitor::stats`](crate::afterburner::AfterburnerMonitor::stats):
     /// manzana does not read per-codec properties from the registry. The field
     /// is public so you can populate it yourself; do not read an empty map as
     /// "the card is decoding nothing".
@@ -133,14 +145,25 @@ pub struct AfterburnerStats {
 }
 
 impl Default for AfterburnerStats {
-    /// An idle-card snapshot, used as a starting value by callers building
-    /// their own `AfterburnerStats`. It is NOT what an unreadable card
-    /// produces: reading a card whose registry lacks the required keys is now
-    /// an error, not a default.
+    /// An all-zero snapshot. Every field is zero, `None`, or empty; **no field
+    /// carries a figure describing any real card.**
+    ///
+    /// Its only intended use is as the tail of struct-update syntax
+    /// (`AfterburnerStats { streams_active: 5, ..Default::default() }`) when
+    /// you are constructing a snapshot yourself.
+    ///
+    /// `streams_capacity` is `0`, not `23`. Until 0.3.0 it was `23`, and that
+    /// mattered more than it looks: `stats()` returns a `Result`, so the
+    /// entirely idiomatic `monitor.stats().unwrap_or_default()` handed the
+    /// caller a plausible idle-Afterburner reading -- capacity 23, zero
+    /// streams, zero utilisation -- on a machine with no card in it. The
+    /// fabricated `23` was removed from the IOKit path in 0.3.0 and walked
+    /// straight back in through this impl. A capacity of `0` is not a card
+    /// anyone can mistake for a reading.
     fn default() -> Self {
         Self {
             streams_active: 0,
-            streams_capacity: 23,
+            streams_capacity: 0,
             utilization_percent: 0.0,
             throughput_fps: 0.0,
             temperature_celsius: None,

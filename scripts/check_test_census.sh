@@ -51,7 +51,24 @@ trap cleanup EXIT
 cargo test --all-features -- --list > "$WORK/out.txt" 2>/dev/null \
   || die "cargo test --list failed; the census cannot be taken"
 
-grep ': test$' "$WORK/out.txt" | sed 's/: test$//' | LC_ALL=C sort -u > "$WORK/names.txt" \
+# Doctest identities are NORMALISED: `cargo test --list` names a doctest
+# "src/foo.rs - foo::Bar::baz (line 85)", and that line number moves whenever
+# anything above it in the file is edited. Keyed raw, a one-word doc fix
+# reported dozens of doctests "removed" and dozens "added" -- and a doctest
+# that was genuinely DELETED would sit in that noise unnoticed, which defeats
+# assertion 4 exactly when it matters. Observed: a docs-only pass produced 7
+# spurious removals and 20 spurious additions in a single run.
+#
+# So the line number is stripped and identical keys are numbered by
+# occurrence, which keeps two doctests on one item distinct while making the
+# key stable under edits. `sort` (not `sort -u`) then dedupe-with-index, so
+# deleting one of an item's two doctests is still visible as a change.
+grep ': test$' "$WORK/out.txt" \
+  | sed 's/: test$//' \
+  | sed -E 's/ \(line [0-9]+\)$//' \
+  | LC_ALL=C sort \
+  | awk '{ c[$0]++; if (c[$0] > 1) printf "%s #%d\n", $0, c[$0]; else print }' \
+  > "$WORK/names.txt" \
   || die "no tests parsed from the harness listing"
 
 total=$(wc -l < "$WORK/names.txt" | tr -d ' ')

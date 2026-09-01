@@ -1,1 +1,1 @@
-{"host":"mini","os":"Darwin","arch":"arm64","os_version":"26.5.2","cargo":"cargo 1.96.0 (30a34c682 2026-05-25)","rc":0,"e2e_passed":8,"e2e_failed":0,"tests_existing":208,"ignored":0}
+{"host":"mini","os":"Darwin","arch":"arm64","os_version":"26.5.2","cargo":"cargo 1.96.0 (30a34c682 2026-05-25)","rc":0,"e2e_passed":8,"e2e_failed":0,"tests_existing":212,"ignored":0}

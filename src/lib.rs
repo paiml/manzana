@@ -13,12 +13,20 @@
 //!
 //! # What is implemented
 //!
-//! | Hardware | Module | Presence detection | Operations |
+//! | Hardware | Module | Presence detection | Operations *on the hardware* |
 //! |----------|--------|--------------------|------------|
 //! | Afterburner FPGA | [`afterburner`] | IOKit registry query | [`AfterburnerMonitor::stats`] implemented |
-//! | Metal GPU | [`metal`] | `system_profiler SPDisplaysDataType` | none — all return [`Error::Unimplemented`] |
-//! | Neural Engine | [`neural_engine`] | build target (`macos` + `aarch64`) | none — all return [`Error::Unimplemented`] |
+//! | Metal GPU | [`metal`] | `system_profiler SPDisplaysDataType` | none — every one returns [`Error::Unimplemented`] |
+//! | Neural Engine | [`neural_engine`] | build target (`macos` + `aarch64`) | none — [`load`](NeuralEngineSession::load) and [`infer`](NeuralEngineSession::infer) return [`Error::Unimplemented`]; [`capabilities`](NeuralEngineSession::capabilities) returns `None` |
 //! | Unified memory | [`unified_memory`] | none — [`unified_memory::is_available`] is always `false` | page-aligned **host** allocation ([`UmaBuffer`]) |
+//!
+//! Read the last column narrowly: it covers operations that would have to
+//! reach the hardware. Plain data types that never touch a device do work, and
+//! are not exceptions to it — [`Tensor`] really allocates and really validates
+//! that `shape` and `data` agree (returning [`Error::InvalidInput`] when they
+//! do not), [`AneCapabilities::m1_baseline`] hands back Apple's published M1
+//! figures under a name that says so, and [`AfterburnerStats`]'s accessors read
+//! fields of a snapshot you already hold. None of them queries anything.
 //!
 //! What each row does and does not establish:
 //!
@@ -35,8 +43,8 @@
 //!   [`is_low_power`](MetalDevice::is_low_power) and
 //!   [`has_unified_memory`](MetalDevice::has_unified_memory) are inferred from
 //!   the device name and the build target. When no VRAM figure is reported,
-//!   [`max_buffer_length`](MetalDevice::max_buffer_length) falls back to 16 GB
-//!   on Apple Silicon and 4 GB elsewhere, so
+//!   [`max_buffer_length`](MetalDevice::max_buffer_length) falls back to
+//!   16 GiB on Apple Silicon and 4 GiB elsewhere, so
 //!   [`vram_gb`](MetalDevice::vram_gb) can return a default rather than a
 //!   reading. If `system_profiler` fails, the device list is empty; no device
 //!   is invented.
@@ -44,7 +52,10 @@
 //!   `cfg` check on `target_os = "macos"` and `target_arch = "aarch64"`, not a
 //!   probe of the running machine. It is sound as a presence claim because
 //!   every Apple Silicon part ships an ANE. Nothing else about the ANE is
-//!   queried: [`NeuralEngineSession::capabilities`] returns `None`.
+//!   queried: [`NeuralEngineSession::capabilities`] returns `None`, and there
+//!   is deliberately no `Default` on [`AneCapabilities`] for
+//!   `capabilities().unwrap_or_default()` to reach — that line used to yield
+//!   the M1's published 15.8 TOPS on any machine at all.
 //! - **Unified memory.** [`UmaBuffer`] is a real page-aligned allocation made
 //!   with [`std::alloc::alloc_zeroed`], freed on drop. It is not an
 //!   `MTLBuffer`, it is not wrapped with `newBufferWithBytesNoCopy:`, and no
@@ -83,7 +94,8 @@
 //! println!("Metal GPU:        {}", metal::is_available());
 //!
 //! for device in metal::MetalCompute::devices() {
-//!     println!("{} — {:.1} GB", device.name, device.vram_gb());
+//!     // vram_gb divides by 2^30, so the unit is GiB despite the name.
+//!     println!("{} — {:.1} GiB", device.name, device.vram_gb());
 //! }
 //!
 //! // Always false: manzana cannot provide GPU-visible memory.

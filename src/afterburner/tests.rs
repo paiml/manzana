@@ -23,6 +23,33 @@ fn test_default_stats_zero_streams() {
     assert!(!stats.is_active());
 }
 
+/// `Default` must not reconstitute the fabricated capacity.
+///
+/// `AfterburnerMonitor::stats()` returns a `Result`, so
+/// `monitor.stats().unwrap_or_default()` is an ordinary thing to write. While
+/// `Default` set `streams_capacity: 23`, that line handed the caller a
+/// plausible idle-Afterburner reading -- capacity 23, zero streams, zero
+/// utilisation -- on a machine with no card in it. `23` is the figure Apple
+/// markets for the card ("up to 23 streams of 4K ProRes"), which is exactly
+/// what made it convincing.
+///
+/// The constant was removed from the IOKit path in 0.3.0 and came straight
+/// back through this impl. RED against that impl: it asserted 0, got 23.
+#[test]
+fn test_default_does_not_reconstitute_the_marketed_capacity() {
+    let stats = AfterburnerStats::default();
+    assert_eq!(
+        stats.streams_capacity, 0,
+        "Default must not carry a figure describing a real card; 23 is Apple's \
+         marketed capacity and reads as a genuine measurement"
+    );
+    assert!(stats.utilization_percent.abs() < f64::EPSILON);
+    assert!(stats.throughput_fps.abs() < f64::EPSILON);
+    assert!(stats.temperature_celsius.is_none());
+    assert!(stats.power_watts.is_none());
+    assert!(stats.codec_breakdown.is_empty());
+}
+
 #[test]
 fn test_stats_is_active() {
     let stats = AfterburnerStats::default();
