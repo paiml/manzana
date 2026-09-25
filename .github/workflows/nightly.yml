@@ -47,11 +47,27 @@ jobs:
         if: matrix.target == 'aarch64-apple-darwin'
         run: cargo test --release
 
+      - name: Provenance
+        run: |
+          {
+            echo "sha=${{ github.sha }}"
+            echo "target=${{ matrix.target }}"
+            echo "toolchain=$(rustc -V)"
+            echo "cargo=$(cargo -V)"
+            echo "runner=${{ runner.name }} ${{ runner.os }}/${{ runner.arch }}"
+            echo "image=${ImageOS:-unknown}@${ImageVersion:-unknown}"
+            echo "run=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          } > provenance-${{ matrix.target }}.txt
+          cp target/${{ matrix.target }}/release/libmanzana.rlib libmanzana-${{ matrix.target }}.rlib
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: manzana-${{ matrix.target }}
-          path: target/${{ matrix.target }}/release/libmanzana*
+          path: |
+            libmanzana-${{ matrix.target }}.rlib
+            provenance-${{ matrix.target }}.txt
+          if-no-files-found: error
 
   release:
     name: Nightly Release
@@ -65,12 +81,22 @@ jobs:
         with:
           path: artifacts
 
-      - name: Create nightly release
+      - name: "Nightly tag (D-12 nightly-YYYYMMDD-sha7, never semver)"
+        id: tag
+        run: |
+          tag="nightly-$(date -u +%Y%m%d)-${GITHUB_SHA::7}"
+          [[ "$tag" =~ ^nightly-[0-9]{8}-[0-9a-f]{7}$ ]] || { echo "::error::bad nightly tag $tag"; exit 1; }
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Create nightly prerelease
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: nightly
-          name: Nightly Build
+          tag_name: ${{ steps.tag.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ steps.tag.outputs.tag }}
           prerelease: true
+          make_latest: false
+          fail_on_unmatched_files: true
           files: artifacts/**/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
